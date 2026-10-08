@@ -1,0 +1,33 @@
+Space Grotesk
+Upstream: https://github.com/google/fonts/tree/main/ofl/spacegrotesk
+Original author repo: https://github.com/floriankarsten/space-grotesk
+License: SIL Open Font License 1.1 (see OFL.txt in this directory)
+
+DAN-144 correction. Previously shipped as the single variable font (wght
+300-700). DAN-140/DAN-144 found that PyQt6 6.11.0 / Qt 6.11.2 do not expose
+the `wght` axis of this variable font at all: QFontDatabase.styles()
+reports exactly one style ("Light", the font's default axis position,
+which is 300 — not 400/Regular as most variable fonts default to) no
+matter what weight a QFont requests, and a pixel-level render test
+(0 differing pixels across weight=300..900, see
+scripts/render_weight_test.py) confirmed Qt does not even synthesize a
+faux-bold from the single face for this embedded font. Every element using
+--font-sans in this design requests the implicit default weight (400,
+"normal" — no font-weight override on body sans exists anywhere in
+tokens.css), so the gap was never "need multiple sans weights," just that
+Qt's only available weight (300) was the wrong one.
+
+Replaced with a single static Regular (400) instance cut from the variable
+font with fonttools varLib.instancer, the same technique already used for
+Source Serif 4 in DAN-137 (OFL explicitly permits this: "Original or
+Modified Versions of the Font Software may be bundled, redistributed
+and/or sold with any software."):
+
+  fonttools varLib.instancer -o SpaceGrotesk-Regular.ttf \
+    --update-name-table SpaceGrotesk[wght].ttf wght=400
+
+Verified in Qt after instancing: QFontDatabase.styles() now reports
+["Regular"] at weight 400, and QFontInfo on the loaded family matches
+exactly (see DAN-144 closing comment for the full probe output).
+
+Recompressed to WOFF2 with fontTools (TTFont(...).flavor = "woff2").

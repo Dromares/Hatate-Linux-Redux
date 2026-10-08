@@ -1,0 +1,26 @@
+Source Serif 4
+Upstream: https://github.com/google/fonts/tree/main/ofl/sourceserif4
+Original author repo: https://github.com/adobe-fonts/source-serif
+License: SIL Open Font License 1.1 (see OFL.txt in this directory)
+
+Google Fonts no longer ships pre-built static instances for this family
+(only the variable font). The two files here are static instances cut
+from the variable font with fonttools varLib.instancer, which is a
+standard, license-compliant way to derive a static weight from an
+OFL-licensed variable font (same glyphs/outlines, fixed axis values,
+`fvar`/`avar`/`gvar` tables dropped):
+
+  fonttools varLib.instancer -o SourceSerif4-Regular.ttf \
+    --update-name-table SourceSerif4[opsz,wght].ttf wght=400 opsz=20
+
+  fonttools varLib.instancer -o SourceSerif4-SemiBold.ttf \
+    --update-name-table SourceSerif4[opsz,wght].ttf wght=600 opsz=20
+
+opsz=20 matches Google's own named-instance default (all eight named
+instances in the source variable font use opsz=20), and sits close to
+the family's intended text optical size for the ~16-22px body copy this
+mockup uses it for.
+
+Both instances were then recompressed to WOFF2 with fontTools
+(TTFont(...).flavor = "woff2"; .save(...)) for a smaller payload with no
+build step — WOFF2 loads via a plain relative url() the same as a .ttf.

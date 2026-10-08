@@ -1,0 +1,45 @@
+JetBrains Mono
+Upstream: https://github.com/google/fonts/tree/main/ofl/jetbrainsmono
+Original author repo: https://github.com/JetBrains/JetBrainsMono
+License: SIL Open Font License 1.1 (see OFL.txt in this directory)
+
+DAN-144 correction. Previously shipped as two variable fonts (upright wght
+100-800, italic wght 100-800). DAN-140/DAN-144 found PyQt6 6.11.0 / Qt
+6.11.2 expose exactly one style per variable file regardless of requested
+weight (QFontDatabase.styles() -> ["Regular"] for upright, ["Regular",
+"Italic"] for the italic file, both pinned at weight 400) and do not
+synthesize a faux-bold for this embedded font (0 differing pixels across
+weight=300..900 in a direct render test, scripts/render_weight_test.py).
+
+This family carries real, load-bearing weight differentiation throughout
+the design — the match-quality status system's second (colour-independent)
+channel is ink weight at 400/500/700 (routine/needs-decision/inert tiers),
+plus kv emphasis, diff indicators, and strong labels. With only one
+renderable weight, that whole channel silently collapsed to a single
+weight in the real app, which the browser-rendered mockup never showed.
+
+Replaced with four static instances cut from the two variable fonts with
+fonttools varLib.instancer, covering every weight/style combination
+actually requested anywhere in tokens.css (400, 500, 700 upright; 500
+italic only, since the one italic use — .status--searching — is always
+font-weight: 500):
+
+  fonttools varLib.instancer -o JetBrainsMono-Regular.ttf \
+    --update-name-table "JetBrainsMono[wght].ttf" wght=400
+  fonttools varLib.instancer -o JetBrainsMono-Medium.ttf \
+    --update-name-table "JetBrainsMono[wght].ttf" wght=500
+  fonttools varLib.instancer -o JetBrainsMono-Bold.ttf \
+    --update-name-table "JetBrainsMono[wght].ttf" wght=700
+  fonttools varLib.instancer -o JetBrainsMono-MediumItalic.ttf \
+    --update-name-table "JetBrainsMono-Italic[wght].ttf" wght=500
+
+Verified in Qt after instancing: loading all three upright statics into
+one QApplication accumulates onto a single "JetBrains Mono" family with
+QFontDatabase.styles() -> ["Regular", "Medium", "Bold"] at weights
+400/500/700 respectively (same accumulation pattern Source Serif 4 already
+uses for Regular+SemiBold). A direct render-diff test at point size 32
+confirmed real, increasing pixel differences between weights (400 vs 500:
+1739 px; 400 vs 700: 2018 px) — not a metadata-only distinction. See the
+DAN-144 closing comment for the full probe output and render crops.
+
+Recompressed to WOFF2 with fontTools (TTFont(...).flavor = "woff2").

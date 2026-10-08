@@ -1,0 +1,17 @@
+# Tooling that CI and contributors need but the application does not.
+# Kept out of requirements.txt so that run.sh's first-launch virtualenv
+# stays the app's dependencies only.
+#
+# Capped for the same reason the runtime pins are, and more tightly. Ruff
+# is pre-1.0 and adds rules in MINOR releases, so an uncapped one turns a
+# green branch red on a day nobody changed any code - the failure mode
+# most likely to teach people to ignore the lint job. Raise these
+# deliberately, and fix whatever the new version finds in that commit.
+ruff>=0.16,<0.17
+mypy>=2.3,<3
+coverage>=7.0,<8
+
+# Reads the bundled Ryoku Kanji subset's cmap so a future resubset can't
+# silently reintroduce the wrong codepoint (DAN-161/DAN-168) without a
+# test noticing.
+fonttools[woff]>=4.50,<5

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#
+# Structural guard (DAN-200): refuses commits made directly in the
+# shared/primary checkout. CLAUDE.md has asked agents to never commit
+# there since DAN-82, but a written convention is not enforcement -
+# seven follow-up incidents (DAN-113, DAN-126, DAN-176, DAN-189, ...)
+# happened anyway. This makes the primary checkout structurally unusable
+# for commits instead of merely discouraged.
+#
+# Installed via `core.hooksPath`, which scripts/agent-preflight.sh sets
+# on every mandatory run, so it self-heals even on a fresh clone. It is
+# shared across all worktrees of the repo (hooksPath is a repo-level,
+# not worktree-level, setting) - that is what lets this one script guard
+# the primary checkout while leaving every linked worktree untouched.
+set -euo pipefail
+
+toplevel="$(git rev-parse --show-toplevel)"
+main_worktree="$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')"
+
+if [ "$toplevel" = "$main_worktree" ]; then
+  cat >&2 <<'EOF'
+ABORT: direct commits in the shared/primary checkout are not allowed.
+
+Other agent runs treat this checkout as shared, read-mostly state - it
+may be parked on an unrelated branch with uncommitted changes at any
+time. Commit from an isolated worktree instead:
+
+    scripts/agent-preflight.sh <ticket-id>
+
+(or, for a Claude Code session, the EnterWorktree tool). See CLAUDE.md
+for the full convention. (DAN-200)
+EOF
+  exit 1
+fi
+
+exit 0

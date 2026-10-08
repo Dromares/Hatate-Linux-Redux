@@ -1,0 +1,32 @@
+# Upper bounds are deliberate. run.sh builds the virtualenv silently on
+# first launch, so an incompatible release of any of these turns a new
+# user's first run into a stack trace with no obvious cause. The caps are
+# set at the next major version - the boundary where each of these
+# projects allows itself to break things - so ordinary updates still come
+# through. Known-good versions are recorded in requirements-lock.txt.
+PyQt6>=6.6,<7
+requests>=2.31,<3
+beautifulsoup4>=4.12,<5
+lxml>=5.0,<7
+Pillow>=10.0,<13
+numpy>=1.24,<3
+
+# Optional, and deliberately not installed by default: only the Google
+# Lens engine needs it, and it brings a ~150MB Chromium with it. Google
+# builds those results with JavaScript, and QtWebEngine's Chromium fork
+# cannot run its front-end - a stock Chromium can. Install it if you
+# want that engine:
+#   venv/bin/pip install playwright
+#   venv/bin/playwright install chromium
+# playwright>=1.40
+
+# Optional, and deliberately not installed by default: only the embedded
+# MCP server (Settings > MCP, off by default) needs it, and run.sh builds
+# this venv silently on first launch - an incompatible or simply absent
+# release of it must never turn a launch that never touches this feature
+# into a stack trace. core/mcp_server.py guards the import and reports
+# "not installed" or "installed but incompatible" depending on which it
+# is. mcp 2.x renamed FastMCP to MCPServer, so a plain `pip install mcp`
+# gets you a release this app cannot use - pin the major version:
+#   venv/bin/pip install "mcp>=1.2,<2"
+# mcp>=1.2,<2

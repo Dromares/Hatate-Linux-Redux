@@ -1,0 +1,46 @@
+# The virtual environment install.sh and run.sh create in this folder on
+# first run. It's several hundred MB of platform-specific binaries that
+# requirements.txt already describes how to rebuild.
+venv/
+
+# Byte-compiled Python.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Test and tooling caches, and what a coverage run leaves behind.
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Editor and OS cruft.
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Runtime state normally lives in ~/.config/hatate-linux/, NOT here - but
+# the tests point XDG_CONFIG_HOME at a temp dir, and a stray run with it
+# set to the repo would otherwise drop the user's Hydrus access key,
+# SauceNAO key and site session cookies straight into a commit. Listed
+# defensively so that mistake can't become a published secret.
+config.json
+session.json
+session.db
+app.log*
+matched_urls.log
+search_cache/
+
+# Agent-local Claude Code settings (machine-specific paths), and the
+# worktrees EnterWorktree nests under the primary checkout (DAN-200) -
+# neither should ever make `git status` in the primary checkout dirty.
+.claude/settings.local.json
+.claude/worktrees/

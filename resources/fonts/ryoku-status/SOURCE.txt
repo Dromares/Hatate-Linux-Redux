@@ -1,0 +1,38 @@
+Ryoku Status (custom subset, not an upstream family name)
+
+Source face: Noto Sans Mono, Regular weight (static).
+Upstream: https://github.com/google/fonts/tree/main/ofl/notosansmono
+(same Noto Project OFL covers the locally installed static build used
+for subsetting, /usr/share/fonts/noto/NotoSansMono-Regular.ttf)
+License: SIL Open Font License 1.1 (see OFL.txt in this directory)
+
+Why this face, not JetBrains Mono: the status column needs six
+glyphs — ● ○ ◐ × · ▲ — and the whole point of a dedicated status
+font is that they sit in one column with matched advance width and
+stroke weight. JetBrains Mono (the UI's general mono face) was checked
+per codepoint and is MISSING ◐ (U+25D0) and ○ (U+25CB):
+
+  JetBrains Mono coverage: ● yes, ○ NO, ◐ NO, × yes, · yes, ▲ yes
+
+Pulling just the two missing glyphs from a second font would have
+reintroduced the exact inconsistency this ticket exists to fix (a
+glyph silently rendered in whatever face happens to have it, with no
+guarantee it matches its neighbors). Noto Sans Mono has all six
+natively in one face, so the whole column comes from a single source
+instead of a 4+2 patch:
+
+  Noto Sans Mono coverage: ● yes, ○ yes, ◐ yes, × yes, · yes, ▲ yes
+
+All six are true monospace glyphs at advanceWidth=600/1000em in this
+face; ◐ and ● specifically have left-side-bearings 80 and 85 (near
+identical, same circular design, same font) — see the per-glyph dump
+in PLAN.md and the DAN-137 closing comment for the measured numbers.
+
+  pyftsubset NotoSansMono-Regular.ttf \
+    --unicodes=U+25D0,U+25CF,U+25CB,U+00D7,U+00B7,U+25B2 \
+    --output-file=RyokuStatus.ttf --flavor=none --no-hinting \
+    --layout-features='' --glyph-names --notdef-outline \
+    --recommended-glyphs
+
+Output renamed to family "Ryoku Status" / style "Regular" via the
+fontTools name table, then recompressed to WOFF2.

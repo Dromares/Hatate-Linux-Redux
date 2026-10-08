@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Runs CI's blocking lint gate before a commit is made, so a ruff finding
+# is caught here rather than as a red build after pushing.
+# Enable once per clone:   git config core.hooksPath .githooks
+# Bypass for one commit:   git commit --no-verify
+DIR="$(git rev-parse --show-toplevel)"
+RUFF=""
+[ -x "$DIR/venv/bin/ruff" ] && RUFF="$DIR/venv/bin/ruff"
+[ -z "$RUFF" ] && command -v ruff >/dev/null 2>&1 && RUFF="ruff"
+if [ -z "$RUFF" ]; then
+    echo "pre-commit: ruff not installed, skipping lint (pip install -r requirements-dev.txt)" >&2
+    exit 0
+fi
+exec "$RUFF" check "$DIR"

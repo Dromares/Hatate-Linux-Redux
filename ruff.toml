@@ -1,0 +1,42 @@
+# Lint config. Deliberately narrow: this gate exists to catch code that is
+# WRONG - a name that doesn't exist, an import nothing uses, a mutable
+# default - not to enforce a house style. A first-pass ruleset that
+# reformatted the whole codebase would bury the findings that matter in
+# several hundred lines of churn, and nobody reviews a diff like that.
+#
+# Rules deliberately NOT enabled yet, and why. Each is a reasonable thing
+# to turn on later, one at a time, as its own commit:
+#
+#   UP    605 findings, all "use X | None instead of Optional[X]" and the
+#         PEP 585 equivalents. Pure modernisation, no behaviour, and it
+#         would touch nearly every file in one go.
+#   I     134 findings, import sorting. Same objection - worth doing, but
+#         as its own mechanical commit, not mixed in with real fixes.
+#   E501  166 lines are over 100 characters. The code sits at a median of
+#         41 and a 99th percentile of 100, so the long ones are a genuine
+#         minority worth wrapping - but again, separately.
+#   BLE001, S110  32 blind excepts and 7 try/except/pass. These are
+#         load-bearing here: core/boorus/__init__.py wraps every optional
+#         parser hook precisely so one parser's bug cannot take down a
+#         match, and each one logs. Enabling these would mean 39
+#         suppression comments on deliberate code.
+target-version = "py310"  # the oldest version CI builds against
+
+# Not enforced (E501 is not selected); recorded so a future ratchet and
+# any formatter agree on the number.
+line-length = 100
+
+[lint]
+select = [
+    "F",   # pyflakes: undefined names, unused imports, unused variables
+    "E9",  # syntax and IO errors - things that stop the file running
+    "B",   # bugbear: mutable defaults, shadowed loop vars, real bug shapes
+]
+
+ignore = [
+    # Qt's model API *requires* this signature - rowCount(self, parent =
+    # QModelIndex()) is the documented override, and PyQt reads the
+    # default to decide the call. The rule is right in general and wrong
+    # for every Qt model there will ever be.
+    "B008",
+]

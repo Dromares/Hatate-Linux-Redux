@@ -1,0 +1,83 @@
+# Coverage config. The suite's own numbers are the point of this file:
+# gui/main_window.py shipped three regressions through a fully green run
+# because the branches involved were never executed, and nobody could see
+# that without measuring.
+[run]
+source = core,gui,workers
+branch = True
+omit =
+    */__pycache__/*
+    tests/*
+
+[report]
+# Lines that exist to report a problem, not to be exercised.
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError
+    if __name__ == .__main__.:
+show_missing = True
+skip_covered = False
+precision = 0
+
+# A FLOOR, not a target. Its whole job is to stop the number sliding
+# quietly downward - which is exactly what happened to produce the three
+# regressions named above, and what no amount of measuring catches on its
+# own if nobody reads the measurement.
+#
+# Ratcheted to 80 (DAN-74, cycle 9). That cycle cleared the whole sub-60%
+# band: every module below 60% at 4c1acd9 is now at 98-100%, and the
+# thinnest thing in the tree is core/tracemoe.py at 64%.
+#
+#   core/image_prep.py               42 -> 100   (upload size cap: the
+#                                                over-cap branch and the
+#                                                JPEG quality ladder)
+#   workers/missing_file_worker.py   44 -> 100
+#   workers/thumbnail_worker.py      56 ->  98
+#   core/tag_colors.py               48 -> 100
+#   core/applog.py                   50 -> 100
+#   gui/add_tags_dialog.py           52 -> 100
+#   core/desktop_attention.py        53 -> 100
+#   workers/hydrus_lookup_worker.py  55 -> 100
+#   core/boorus/xbooru.py            58 -> 100
+#
+# 2146 tests, up from 2011 at 4c1acd9. Locally on 3.14: 81.87%, up from
+# 80.99%.
+#
+# 80 and not 81, by the rule the note below established: the local run
+# reads about 0.9 points HIGH against the versions CI gates, so CI should
+# say roughly 81.0. A floor of 81 would leave about a tenth of a point of
+# margin, and that 0.9 offset is one measured data point (DAN-49), not a
+# constant. 80 keeps the ~1 point of headroom that offset's uncertainty
+# needs while still ratcheting.
+#
+# Previously 79 (DAN-49, cycle 8). That cycle brought the Hydrus WRITE
+# path under test for the first time - core/hydrus_client.py 55 -> 90 -
+# plus the three sub-40% workers, core/hydrus_import_poll.py and
+# gui/hydrus_query_dialog.py, all four now at 100. 1964 tests, up from
+# 1817 at ffa0ce5.
+#
+# 79 because CI's ACTUAL figure was read this time rather than guessed at,
+# which is what the note below has been asking for since DAN-1:
+#
+#   CI on PR #15, run 36511235931, both gated versions:
+#     3.10  79.52%   3.13  79.53%   (shown as "80%" - precision is 0)
+#   same tree measured locally on 3.14: 80.45%
+#
+# So the local run reads ~0.9 points HIGH against the versions CI gates.
+# Worth knowing before the next ratchet: measure locally, subtract about a
+# point, and that is roughly what CI will say. The margin here is now
+# ~0.5 points rather than the ~3 DAN-1 left - deliberately, because that
+# buffer existed only because CI's figure was not knowable from a dev
+# machine. It is knowable; it is written above. If this ever goes red on
+# an unrelated change, read the drop before lowering the floor: half a
+# point of real loss is exactly what this is here to catch.
+#
+# Previously: 75 by board decision (DAN-1, cycle 5) against 78 measured
+# locally on main @ 92f234b (1714 tests), after the cycle 4 work (DAN-18
+# mypy, DAN-19/DAN-21 harnesses) moved a good deal of logic somewhere it
+# can actually be exercised.
+#
+# It ratchets: when a change pushes coverage up, move this up with it in
+# the same commit.
+fail_under = 80
