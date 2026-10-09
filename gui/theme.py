@@ -437,6 +437,46 @@ def stylesheet(mode):
             font-weight: 700;
             background: transparent;
     }}
+
+    /* ---- the compare header's readout (DAN-1169): glyph, 28px serif
+       value, mono-caps label, size ratio. The ratio's tier is a dynamic
+       property so a theme switch repaints it without Python's help. ---- */
+    QFrame#ZoomTools {{
+            background: {card};
+            border: 1px solid {ink_46};
+    }}
+    QLabel#ReadoutGlyph {{
+            font-size: 13px;
+            color: {ink_65};
+            background: transparent;
+    }}
+    QLabel#ReadoutValue {{
+            font-family: {font_serif};
+            font-size: 28px;
+            font-weight: 600;
+            color: {ink_100};
+            background: transparent;
+    }}
+    QLabel#ReadoutLabel {{
+            font-family: {font_mono};
+            font-size: 11px;
+            color: {ink_65};
+            background: transparent;
+    }}
+    QLabel#ReadoutDiff {{
+            font-family: {font_mono};
+            font-size: 11px;
+            color: {ink_65};
+            background: transparent;
+    }}
+    QLabel#ReadoutDiff[tier="ink_100"] {{
+            font-family: {font_mono};
+            color: {ink_100};
+            font-weight: 700;
+    }}
+    QLabel#ReadoutDiff[tier="ink_65"] {{ color: {ink_65}; }}
+    QLabel#ReadoutDiff[tier="ink_45"] {{ color: {ink_65}; }}
+
     QLabel#Muted, QLabel#Hint {{
             color: {ink_65};
             background: transparent;

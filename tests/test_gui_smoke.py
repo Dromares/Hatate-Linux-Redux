@@ -3764,7 +3764,7 @@ class TestPreviewClearsWhenRowsAreRemoved(GuiTestCase):
         matched = self.win.matched_preview.pixmap()
         self.assertTrue(matched is None or matched.isNull())
 
-    def test_the_tag_list_and_banner_follow_as_well(self):
+    def test_the_tag_list_and_readout_follow_as_well(self):
         """They must not describe the vanished entry. The successor is
         given a score of its own so the banner shows whose it is."""
         self.entries[3].similarity = 70.0
@@ -3774,8 +3774,7 @@ class TestPreviewClearsWhenRowsAreRemoved(GuiTestCase):
         self.entries[3].similarity_measured = True
         self._select(2)
         self.win._remove_rows([self.entries[2]])
-        self.assertTrue(self.win.comparison_banner.text().startswith("70% similar"),
-                        self.win.comparison_banner.text())
+        self.assertEqual(self.win.readout_value.text(), "70%")
 
     def test_removing_everything_clears_it(self):
         self._select(0)
