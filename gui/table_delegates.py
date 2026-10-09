@@ -29,8 +29,10 @@ background and silently stop asking this delegate - and the model - for
 BackgroundRole/ForegroundRole at all. Nothing here needs touching it, but
 the glyph this class draws depends on that rule staying absent.
 """
-from PyQt6.QtCore import QRectF, Qt
-from PyQt6.QtGui import QFont, QFontMetrics
+import re
+
+from PyQt6.QtCore import QRectF, QSize, Qt
+from PyQt6.QtGui import QBrush, QFont, QFontMetrics
 from PyQt6.QtWidgets import QApplication, QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
 from gui import theme
@@ -38,6 +40,11 @@ from gui.image_table_model import CHIP_ROLE
 
 MARGIN = 6         # from the cell's own edge
 GLYPH_GAP = 6      # between the glyph and the label that follows it
+
+TAG_ROW_HEIGHT = 32   # the mockup's measured .tag-row, rule included
+TAG_ROW_PAD = 16      # its --space-4 side padding
+TAG_FONT_PX = 13
+_TAG_SOURCE = re.compile(r"^(\[[^\]]+\])\s(.*)$", re.DOTALL)
 
 
 class ChipDelegate(QStyledItemDelegate):
@@ -132,3 +139,66 @@ class ChipDelegate(QStyledItemDelegate):
             glyph_width = QFontMetrics(option.font).horizontalAdvance(glyph)
             size.setWidth(size.width() + glyph_width + GLYPH_GAP)
         return size
+
+
+class TagRowDelegate(QStyledItemDelegate):
+    """The Review tag list's rows: a fixed-height ruled row in mono, with the
+    `[Source]` marker dimmed and the tag itself bright.
+
+    A list can mix `[Booru]` / `[Hydrus]` / user tags, and the source is
+    the part you skip over while scanning for the tag. The marker is read
+    out of the item's text, so an item without one (the editable list,
+    which shows plain `namespace:name`) draws as a single bright run.
+    """
+
+    def __init__(self, mode_getter, parent=None):
+        super().__init__(parent)
+        self._mode_getter = mode_getter    # a callable, as in ChipDelegate
+
+    def sizeHint(self, option, index):
+        return QSize(super().sizeHint(option, index).width(), TAG_ROW_HEIGHT)
+
+    def paint(self, painter, option, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        text = opt.text
+        opt.text = ""
+        style = opt.widget.style() if opt.widget is not None else QApplication.style()
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
+
+        mode = self._mode_getter()
+        row = option.rect
+        painter.save()
+        painter.setPen(theme.ink_color(mode, "ink_18"))
+        painter.drawLine(row.left(), row.bottom(), row.right(), row.bottom())
+
+        if opt.state & QStyle.StateFlag.State_Selected:
+            # The fill is stamp_bg, the colour every ink tier resolves to
+            # (DAN-1151): ink on a selected row would be ink on ink.
+            bright = dim = opt.palette.highlightedText().color()
+        else:
+            foreground = index.data(Qt.ItemDataRole.ForegroundRole)
+            brush = foreground if isinstance(foreground, QBrush) else None
+            bright = (brush.color() if brush is not None and brush.style() != Qt.BrushStyle.NoBrush
+                      else theme.ink_color(mode, "ink_100"))
+            dim = theme.ink_color(mode, "ink_65")
+
+        match = _TAG_SOURCE.match(text)
+        source, tag = (match.group(1) + " ", match.group(2)) if match else ("", text)
+
+        font = theme.mono_font(opt.font)
+        font.setPixelSize(TAG_FONT_PX)
+        painter.setFont(font)
+        metrics = QFontMetrics(font)
+        x = row.left() + TAG_ROW_PAD
+        right = row.right() - TAG_ROW_PAD
+        align = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+        if source:
+            width = metrics.horizontalAdvance(source)
+            painter.setPen(dim)
+            painter.drawText(QRectF(x, row.top(), width, row.height() - 1), align, source)
+            x += width
+        shown = metrics.elidedText(tag, Qt.TextElideMode.ElideRight, max(0, right - x))
+        painter.setPen(bright)
+        painter.drawText(QRectF(x, row.top(), max(0, right - x), row.height() - 1), align, shown)
+        painter.restore()
