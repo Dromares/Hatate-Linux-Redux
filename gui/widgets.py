@@ -29,18 +29,24 @@ SPLITTER_HANDLE = 12
 INPUT_MIN_HEIGHT = 38     # a single-line edit crushed below this stops being readable
 
 
-def card(title=None):
-    """A square-cornered panel with an optional heading, plus its content layout.
+def card(title=None, framed=True):
+    """A region of the page with an optional heading, plus its content layout.
 
     Returns the frame and the layout separately because the caller wants
     the frame (to put somewhere) and the layout (to fill) - handing back
     only the frame would mean every caller digging the layout back out.
 
     The frame is left named 'Card', which is what the stylesheet's
-    `QFrame#Card` rule selects on.
+    `QFrame#Card` rule selects on. That rule is a transparent 1px
+    hairline, not a fill (DAN-1160). `framed=False` is for a card that
+    only groups other regions - a column holding a table that has its
+    own hairline - where a second line round the outside would be a box
+    in a box; it is carried as a property so the object name, which
+    callers and tests walk up the parent chain looking for, stays 'Card'.
     """
     frame = QFrame()
     frame.setObjectName('Card')
+    frame.setProperty('framed', framed)
     layout = QVBoxLayout(frame)
     layout.setContentsMargins(*CARD_MARGINS)
     layout.setSpacing(CARD_SPACING)
@@ -49,6 +55,40 @@ def card(title=None):
         heading.setObjectName('Heading')
         layout.addWidget(heading)
     return frame, layout
+
+
+def section_label(text):
+    """A numbered section label - "01 // Filter" - in the mono, tracked, dim
+    voice the mockup scans by.
+
+    `text` is passed in sentence case on purpose. The uppercase comes from
+    `QFont.Capitalization.AllUppercase`, because QSS has no
+    `text-transform`; upper-casing the string instead would put shouting
+    in the accessible name and in anything that reads `.text()`.
+    """
+    label = QLabel(text)
+    label.setObjectName('SectionLabel')
+    font = label.font()
+    font.setCapitalization(QFont.Capitalization.AllUppercase)
+    label.setFont(font)
+    apply_tracking(label)
+    return label
+
+
+def section_header(text, *trailing):
+    """A `section_label` with a hairline running from it to the right edge,
+    then whatever `trailing` widgets (a toolbar) sit at the end of the line.
+    Returns the row as a layout, ready for `addLayout`."""
+    row = QHBoxLayout()
+    row.setSpacing(12)
+    row.addWidget(section_label(text))
+    rule = QFrame()
+    rule.setObjectName('SectionRule')
+    rule.setFixedHeight(1)
+    row.addWidget(rule, 1, Qt.AlignmentFlag.AlignVCenter)
+    for widget in trailing:
+        row.addWidget(widget)
+    return row
 
 
 def run_banner():

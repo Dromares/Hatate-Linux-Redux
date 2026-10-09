@@ -17,12 +17,17 @@ from typing import Iterable, Optional
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
-    QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QToolButton, QWidget,
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QToolButton,
 )
 
 from core.entry_filter import (
     EntryFilter, NO_SITE, sites_present, statuses_present, upscale_verdicts_present,
 )
+from gui import widgets
+
+
+FILTER_BAND_MARGINS = (16, 10, 16, 10)
+FILTER_BAND_SPACING = 12
 
 
 def set_all_checked(actions, checked: bool) -> None:
@@ -57,8 +62,10 @@ def describe_hidden(shown: int, total: int) -> str:
     return f"showing {shown:,} of {total:,} (the rest are hidden, not removed)"
 
 
-class FilterBar(QWidget):
+class FilterBar(QFrame):
     """Filename text, plus multi-select status and site menus.
+
+    A QFrame so the stylesheet can draw it as a hairline band (DAN-1160).
 
     Emits `changed` whenever the selection moves. It deliberately does not
     apply anything itself - the owner holds the table and decides.
@@ -76,10 +83,13 @@ class FilterBar(QWidget):
         """
         super().__init__(parent)
         self._entries = entries_provider
+        self.setObjectName("FilterBand")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(*FILTER_BAND_MARGINS)
+        layout.setSpacing(FILTER_BAND_SPACING)
 
-        layout.addWidget(QLabel("Filter:"))
+        self.filter_label = widgets.section_label("01 // Filter")
+        layout.addWidget(self.filter_label)
 
         self.filter_text = QLineEdit()
         self.filter_text.setPlaceholderText("filename contains…")

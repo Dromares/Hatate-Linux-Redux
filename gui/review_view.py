@@ -106,10 +106,12 @@ class ReviewViewMixin:
 
     # -- the pictures ---------------------------------------------------
     def _build_comparison_card(self):
-        card, layout = widgets.card()
+        card, layout = widgets.card(framed=False)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         header = QHBoxLayout()
         header.setSpacing(10)
+        header.addWidget(widgets.section_label("01 // Compare"))
         self.review_view_switch, self.review_view_buttons = widgets.segmented(
             VIEWS, on_change=self._on_review_view_changed, current="pair",
         )
@@ -241,7 +243,8 @@ class ReviewViewMixin:
 
     # -- the decision ---------------------------------------------------
     def _build_decision_card(self):
-        card, layout = widgets.card()
+        card, layout = widgets.card(framed=False)
+        layout.setContentsMargins(0, 0, 0, 0)
         card.setMinimumWidth(320)
         card.setMaximumWidth(460)
 
@@ -262,7 +265,7 @@ class ReviewViewMixin:
         self.candidate_combo.currentIndexChanged.connect(self._on_candidate_combo_changed)
         layout.addWidget(self.candidate_combo)
 
-        layout.addWidget(widgets.heading("Tags"))
+        layout.addWidget(widgets.section_label("02 // Tags"))
         self.tag_list = QListWidget()
         self.tag_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.tag_list.itemChanged.connect(self._on_tag_item_edited)

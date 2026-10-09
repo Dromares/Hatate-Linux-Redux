@@ -1173,6 +1173,39 @@ _SWEEP_EXEMPTIONS = [
                   "an interactive edge, the same category DAN-241 already put "
                   "QStatusBar and QGroupBox in. Quiet on purpose, same reasoning.",
     },
+    # DAN-1160 / G-08: the flat hairline surfaces. The mockup (the approved
+    # spec) draws region edges at ink_18 on a flat page; these are passive
+    # grouping frames, the same category as QGroupBox above - nothing on
+    # the line is a hit target, the contents carry their own (3:1) edges.
+    {
+        "kind": "border", "selectors": frozenset({"QFrame#Card"}),
+        "fg_token": "ink_18", "bg_prefix": None,
+        "reason": "DAN-1160 / G-08: a Card is a transparent grouping region whose "
+                  "1px ink_18 hairline replaces the old filled panel (mockup spec). "
+                  "Passive frame, same call as QGroupBox: quiet on purpose, the "
+                  "controls inside keep their own ink_46 edges.",
+    },
+    {
+        "kind": "border", "selectors": frozenset({"QFrame#FilterBand"}),
+        "fg_token": "ink_18", "bg_prefix": None,
+        "reason": "DAN-1160 / G-08: the Queue filter band is a hairline region, not a "
+                  "fill (mockup spec). Passive grouping frame like QGroupBox; the "
+                  "inputs inside it are the interactive edges and are ink_46.",
+    },
+    {
+        "kind": "border", "selectors": frozenset({"QFrame#DropZone"}),
+        "fg_token": "ink_18", "bg_prefix": "card",
+        "reason": "DAN-1160 / G-08: the empty-Queue drop zone's outline. It is a "
+                  "passive region frame (the whole page is the drop target, not "
+                  "the line) - same call as QGroupBox.",
+    },
+    {
+        "kind": "border", "selectors": frozenset({"QTableView"}),
+        "fg_token": "ink_18", "bg_prefix": "card",
+        "reason": "DAN-1160 / G-08: the hairline that outlines the Queue table region "
+                  "(mockup spec). The line is not a hit target - rows, headers and "
+                  "selection carry their own, separately-audited contrast.",
+    },
     # DAN-292's two entries (QLabel#EngineChipOn border ink_28, QLabel#EngineChipOff
     # text ink_45) are deliberately absent here: DAN-297 landed the fix
     # (ink_28 -> ink_46, ink_45 -> ink_65) on main before this sweep did, so

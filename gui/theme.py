@@ -316,10 +316,52 @@ def stylesheet(mode):
     }}
     QMainWindow, QDialog {{ background: {page}; }}
 
-    /* ---- cards: flat panels, lifted by a hairline rather than a
-       shadow or a radius ---- */
+    /* ---- cards: regions of a flat page, set off by a 1px hairline
+       rather than a fill, a shadow or a radius (DAN-1160 / G-08). A
+       filled card on a page of its own colour nested three deep (page
+       card > table card > filter band) and was the largest single reason
+       production did not look like the mockup. Transparent, so a
+       region's own contents (the table viewport, an input) are the only
+       things carrying a fill and the pictures stay the brightest thing on
+       screen. ink_18 is the mockup's "card borders" tier. A card that
+       only groups other regions (the Queue and Review columns) is
+       `framed=false` and draws no line of its own. ---- */
     QFrame#Card {{
+            background: transparent;
+            border: 1px solid {ink_18};
+    }}
+    QFrame#Card[framed="false"] {{
+            border: none;
+    }}
+    /* The row of filters above the Queue table: a hairline band, not a
+       fill. */
+    QFrame#FilterBand {{
+            background: transparent;
+            border: 1px solid {ink_18};
+    }}
+    /* What an empty Queue shows instead of the table. */
+    QFrame#DropZone {{
             background: {card};
+            border: 1px solid {ink_18};
+    }}
+
+    /* ---- numbered section labels ("01 // Filter") - mono, tracked,
+       dim. Uppercase is NOT here: QSS has no text-transform, so
+       widgets.section_label() sets QFont.AllUppercase and the tracking
+       in Python. ink_65 rather than the mockup's decorative ink_45: it is
+       text, so it must clear 4.5:1. ---- */
+    QLabel#SectionLabel {{
+            font-family: {font_mono};
+            font-size: 11px;
+            color: {ink_65};
+            background: transparent;
+    }}
+    /* The hairline that runs from a section label to the right edge. */
+    QFrame#SectionRule {{
+            background: {ink_18};
+            border: none;
+            max-height: 1px;
+            min-height: 1px;
     }}
 
     /* ---- the crash-recovery notice (DAN-660) - same flat-panel shape
@@ -624,7 +666,7 @@ def stylesheet(mode):
     QTableView {{
             background: {card};
             color: {ink_100};
-            border: none;
+            border: 1px solid {ink_18};
             gridline-color: transparent;
             selection-background-color: {stamp_bg};
             selection-color: {stamp_fg};
