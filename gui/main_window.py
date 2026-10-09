@@ -21,7 +21,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtCore import QUrl
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QApplication, QFileDialog, QStackedWidget,
+    QAbstractItemView, QApplication, QFileDialog, QFrame, QStackedWidget,
     QHBoxLayout, QHeaderView, QListWidgetItem,
     QMainWindow, QMenu, QMessageBox, QTableView, QVBoxLayout, QWidget,
 )
@@ -711,8 +711,10 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         whole job is showing a lot of rows at once. They are in Review
         now, so the list finally gets the width.
         """
-        card, card_layout = widgets.card()
-        card_layout.setContentsMargins(14, 12, 14, 12)
+        # Unframed: the filter band and the table each draw their own
+        # hairline, so a line round all of it would be a box in a box.
+        card, card_layout = widgets.card(framed=False)
+        card_layout.setContentsMargins(0, 0, 0, 0)
         card_layout.addWidget(widgets.screen_title("Queue."))
 
         # Hidden until _restore_saved_session finds an unclean-shutdown
@@ -737,7 +739,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         table_panel = QWidget()
         table_layout = QVBoxLayout(table_panel)
         table_layout.setContentsMargins(0, 0, 0, 0)
-        table_layout.setSpacing(4)
+        table_layout.setSpacing(12)
         self.filter_bar = FilterBar(lambda: self.entries)
         self.filter_bar.changed.connect(self._apply_filter)
         self.filter_bar.rebuild_menus()
@@ -821,8 +823,12 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         place for them and a poor place to *discover* them: a first
         launch showed a blank table and a menu bar.
         """
-        panel = QWidget()
+        panel = QFrame()
+        panel.setObjectName("DropZone")
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(32, 24, 32, 24)
+        self.queue_section_label = widgets.section_label("00 // Queue")
+        layout.addWidget(self.queue_section_label, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addStretch(1)
 
         title = widgets.heading("Drop images here")

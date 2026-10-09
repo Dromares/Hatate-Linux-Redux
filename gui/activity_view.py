@@ -56,7 +56,9 @@ class ActivityViewMixin:
     # Engines
     # ------------------------------------------------------------------
     def _build_engines_card(self):
-        card, layout = widgets.card("Engines")
+        card, layout = widgets.card(framed=False)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(widgets.section_header("01 // Engines"))
 
         self.engine_pipeline = widgets.hint("")
         self.engine_pipeline.setWordWrap(True)
@@ -157,21 +159,21 @@ class ActivityViewMixin:
     # Log
     # ------------------------------------------------------------------
     def _build_log_card(self):
-        card, layout = widgets.card()
+        card, layout = widgets.card(framed=False)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        header = QHBoxLayout()
-        header.addWidget(widgets.heading("Log"))
-        header.addStretch(1)
         self.log_follow_btn = widgets.icon_button(
             "⟳", "Keep the log up to date while this page is open.",
             self._on_follow_toggled, checkable=True,
         )
         self.log_follow_btn.setChecked(True)
-        header.addWidget(self.log_follow_btn)
-        header.addWidget(widgets.icon_button("⧉", "Copy the whole log.", self._copy_log))
-        header.addWidget(widgets.icon_button(
-            "↗", "Open the folder the log file is in.", self._open_log_folder))
-        layout.addLayout(header)
+        layout.addLayout(widgets.section_header(
+            "02 // Log",
+            self.log_follow_btn,
+            widgets.icon_button("⧉", "Copy the whole log.", self._copy_log),
+            widgets.icon_button(
+                "↗", "Open the folder the log file is in.", self._open_log_folder),
+        ))
 
         self.log_view = QPlainTextEdit()
         self.log_view.setObjectName("Log")   # the theme gives this one a monospace face
