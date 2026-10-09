@@ -36,6 +36,12 @@ def _entry(measured, similarity=96.0, local=(1000, 1000)):
     return entry
 
 
+def _span(widget, ancestor):
+    """The (left, right) x extent of `widget` in `ancestor`'s coordinates."""
+    left = widget.mapTo(ancestor, widget.rect().topLeft()).x()
+    return left, left + widget.width()
+
+
 class TestReadoutParts(unittest.TestCase):
     def test_a_measured_score_reads_similarity_with_a_good_glyph(self):
         readout = comparison_readout(
@@ -139,14 +145,10 @@ class TestReadoutInTheHeader(GuiTestCase):
                          if b.toolTip().startswith(("Open the comparison", "Show all"))]
                 self.assertEqual(len(tools), 2)
 
-                def span(widget):
-                    left = widget.mapTo(card, widget.rect().topLeft()).x()
-                    return left, left + widget.width()
-
-                r_left, r_right = span(win.comparison_readout)
-                self.assertGreaterEqual(r_left, span(switch)[1])
-                self.assertLessEqual(r_right, min(span(t)[0] for t in tools))
-                self.assertLessEqual(max(span(t)[1] for t in tools), card.width())
+                r_left, r_right = _span(win.comparison_readout, card)
+                self.assertGreaterEqual(r_left, _span(switch, card)[1])
+                self.assertLessEqual(r_right, min(_span(t, card)[0] for t in tools))
+                self.assertLessEqual(max(_span(t, card)[1] for t in tools), card.width())
 
     def test_zoom_floats_inside_the_frame_not_in_the_header(self):
         win = self._review_window("dark")
