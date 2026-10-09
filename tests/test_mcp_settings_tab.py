@@ -165,10 +165,10 @@ class TestConnectionStates(unittest.TestCase):
 
     def test_state_3_mcp_package_not_installed(self):
         self.window._mcp_server.last_error = (
-            "MCP support not installed - run `venv/bin/pip install mcp` to enable it")
+            'MCP support not installed - run `venv/bin/pip install "mcp>=1.2,<2"` to enable it')
         self.dialog._refresh_mcp_connection()
         self.assertIn("isn't installed", self.dialog.mcp_connection_primary.text())
-        self.assertIn("venv/bin/pip install mcp", self.dialog.mcp_connection_remedy.text())
+        self.assertIn('venv/bin/pip install "mcp>=1.2,<2"', self.dialog.mcp_connection_remedy.text())
 
     def test_state_4_no_token(self):
         self.window._mcp_server.last_error = "Blank bearer token: refusing to start the MCP server"

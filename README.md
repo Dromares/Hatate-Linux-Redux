@@ -909,7 +909,7 @@ deliberately turn it on in Settings and give it a token.
 way Playwright is for the Google Lens engine (see `requirements.txt`):
 
 ```bash
-venv/bin/pip install mcp
+venv/bin/pip install "mcp>=1.2,<2"
 ```
 
 Without it, turning the server on logs "MCP support not installed" and
