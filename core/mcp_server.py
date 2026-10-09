@@ -114,12 +114,13 @@ class McpServerController:
                 # something they already have.
                 self.last_error = (
                     f"MCP package installed but incompatible ({exc}) - run "
-                    "`venv/bin/pip install mcp>=1.2,<2` to install a compatible version "
+                    '`venv/bin/pip install "mcp>=1.2,<2"` to install a compatible version '
                     "(see requirements.txt)"
                 )
             else:
                 self.last_error = (
-                    "MCP support not installed - run `venv/bin/pip install mcp` to enable it "
+                    "MCP support not installed - run "
+                    '`venv/bin/pip install "mcp>=1.2,<2"` to enable it '
                     "(see requirements.txt)"
                 )
             log.error("%s (%s)", self.last_error, exc)

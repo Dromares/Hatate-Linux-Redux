@@ -2477,7 +2477,7 @@ class SettingsDialog(QDialog):
         else:
             err = (server.last_error if server is not None else None) or ""
             lowered = err.lower()
-            if "pip install mcp" in lowered or "not installed" in lowered:
+            if "not installed" in lowered:
                 state = 3
             elif "blank bearer token" in lowered:
                 state = 4
@@ -2499,7 +2499,7 @@ class SettingsDialog(QDialog):
             2: (f"Listening on {MCP_HOST}:{port}.",
                 "A client with the token below can connect now."),
             3: ("Can't start — the mcp package isn't installed.",
-                "Install it: venv/bin/pip install mcp, then restart Hatate. "
+                'Install it: venv/bin/pip install "mcp>=1.2,<2", then restart Hatate. '
                 "(It's optional, so this app never installs it for you.)"),
             4: ("Can't start — no token is set.",
                 'Generate one below, then click "Restart server."'),

@@ -6,6 +6,7 @@ ASGI app, converting a result into MCP content blocks) is guarded and
 skipped when it isn't installed - which, per requirements.txt, is the
 normal state of this repo's own test environment.
 """
+import re
 import sys
 import time
 import types
@@ -15,6 +16,11 @@ from unittest import mock
 
 from . import _path  # noqa: F401
 from core import mcp_server, mcp_tools
+
+# The one install command every user-facing surface must show. It has to be
+# quoted - pasted bare, `>` and `<` are shell redirections - and pinned,
+# because mcp 2.x renamed FastMCP and this app cannot run on it (DAN-1139).
+PINNED_INSTALL = 'venv/bin/pip install "mcp>=1.2,<2"'
 
 try:
     import mcp as _mcp_package  # noqa: F401
@@ -189,7 +195,7 @@ class TestServerLifecycle(unittest.TestCase):
         self.assertFalse(controller.start(McpSettings(enabled=True, token="abc123")))
         self.assertFalse(controller.running)
         self.assertIn("not installed", controller.last_error)
-        self.assertIn("pip install mcp", controller.last_error)
+        self.assertIn(PINNED_INSTALL, controller.last_error)
 
     def test_stop_is_safe_to_call_when_never_started(self):
         controller = mcp_server.McpServerController(FakeHandlersWithInvoker())
@@ -311,7 +317,7 @@ class TestMissingOrIncompatiblePackage(unittest.TestCase):
     def test_a_genuinely_absent_package_still_says_not_installed(self):
         controller = self._start_with(ImportError("No module named 'mcp'"), mcp_module_present=False)
         self.assertIn("not installed", controller.last_error)
-        self.assertIn("pip install mcp", controller.last_error)
+        self.assertIn(PINNED_INSTALL, controller.last_error)
 
     def test_an_installed_but_incompatible_package_says_so_instead(self):
         controller = self._start_with(
@@ -322,8 +328,16 @@ class TestMissingOrIncompatiblePackage(unittest.TestCase):
             mcp_module_present=True,
         )
         self.assertIn("incompatible", controller.last_error)
-        self.assertIn("mcp>=1.2,<2", controller.last_error)
+        self.assertIn(PINNED_INSTALL, controller.last_error)
         self.assertNotIn("not installed", controller.last_error)
+
+    def test_the_incompatible_message_survives_a_shell_paste(self):
+        # The recovery command is user-facing copy; shlex must see it as a
+        # single quoted spec, not `mcp` followed by redirections.
+        import shlex
+        controller = self._start_with(ImportError("renamed"), mcp_module_present=True)
+        command = re.search(r"`([^`]+)`", controller.last_error).group(1)
+        self.assertEqual(shlex.split(command), ["venv/bin/pip", "install", "mcp>=1.2,<2"])
 
     def test_helper_itself_says_true_when_mcp_is_importable(self):
         with mock.patch.dict(sys.modules, {"mcp": types.ModuleType("mcp")}):
@@ -334,6 +348,34 @@ class TestMissingOrIncompatiblePackage(unittest.TestCase):
         # import to fail regardless of what's really installed on disk.
         with mock.patch.dict(sys.modules, {"mcp": None}):
             self.assertFalse(mcp_server._mcp_top_level_import_succeeds())
+
+
+class TestInstallCommandIsPinnedEverywhere(unittest.TestCase):
+    """DAN-1139: PyPI's latest `mcp` is 2.x, which this app cannot run, so
+    an unpinned `pip install mcp` in our own docs or error text sends every
+    first-time user into the incompatible-package error."""
+
+    _USER_FACING = ("README.md", "core/mcp_server.py", "gui/settings_dialog.py")
+    _UNPINNED = re.compile(r"pip install\s+mcp(?![>=<~!])")
+
+    @staticmethod
+    def _read(relative):
+        import os
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, relative), encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_every_user_facing_install_command_is_the_quoted_pinned_form(self):
+        for relative in self._USER_FACING:
+            with self.subTest(file=relative):
+                text = self._read(relative)
+                self.assertIn(PINNED_INSTALL, text)
+                self.assertEqual(self._UNPINNED.findall(text), [])
+
+    def test_no_install_command_is_left_with_a_bare_shell_redirection(self):
+        for relative in self._USER_FACING:
+            with self.subTest(file=relative):
+                self.assertNotRegex(self._read(relative), r"pip install\s+mcp[>=<]")
 
 
 def _annotated_fake_handlers():
