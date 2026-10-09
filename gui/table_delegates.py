@@ -71,7 +71,18 @@ class ChipDelegate(QStyledItemDelegate):
             return
 
         mode = self._mode_getter()
-        color = theme.ink_color(mode, theme.status_weight(key))
+        if opt.state & QStyle.StateFlag.State_Selected:
+            # The selection fill is stamp_bg, which is the very colour
+            # ink_color() resolves every tier to (only the alpha differs),
+            # so ink on a selected row is ink on ink: 1.00:1, a blank cell
+            # (DAN-1151). The view's own HighlightedText is the colour its
+            # stylesheet already pairs with that fill (`selection-color`),
+            # and it is what the plain-text cells of the same row use. The
+            # ink-ramp weight is dropped here, but the glyph and the word
+            # still carry the verdict.
+            color = opt.palette.highlightedText().color()
+        else:
+            color = theme.ink_color(mode, theme.status_weight(key))
         glyph = theme.status_glyph(key)
         glyph_font_family = theme.status_glyph_font(key)
         label = theme.chip_label(key, text)
