@@ -294,6 +294,16 @@ class ReviewViewMixin:
         send.setToolTip("Send the file, its URL and its tags to Hydrus.")
         layout.addWidget(send)
 
+        # Send is the one action here that is not easily taken back, so the
+        # button carries its own cost label (the mockup's commit-caption).
+        caption = QLabel("Uploads file + tags to Hydrus \u2014 not easily undone")
+        caption.setObjectName('CommitCaption')
+        caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        caption.setWordWrap(True)
+        widgets.apply_tracking(caption, 0.06)
+        layout.addWidget(caption)
+        self.send_caption = caption
+
         grid = QGridLayout()
         grid.setSpacing(8)
 
