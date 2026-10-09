@@ -379,6 +379,12 @@ def stylesheet(mode):
             color: {ink_65};
             background: transparent;
     }}
+    QLabel#CommitCaption {{
+            font-family: {font_mono};
+            font-size: 10px;
+            color: {ink_65};
+            background: transparent;
+    }}
     QLabel {{ background: transparent; }}
 
     /* ---- a setting the search has just jumped to. Bright enough to
