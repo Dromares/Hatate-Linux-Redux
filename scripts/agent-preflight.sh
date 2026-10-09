@@ -50,11 +50,65 @@
 # so running this script is what turns "please use a worktree" from a
 # convention into an enforced one — including on a fresh clone that has
 # never had the hook configured before.
+#
+# DAN-265: the `git fetch` below talks to GitHub through a per-run managed
+# identity that vends intermittently (DAN-93, DAN-101, DAN-174, DAN-259).
+# That is a known, usually-transient *platform* flake, not evidence this
+# checkout, this agent, or its credentials are broken — see
+# docs/github-identity-flakes.md for the full diagnosis and the
+# `scripts/check_github_identity.sh` probe that tells "just me" from
+# "everyone" in one command. Two things follow from that:
+#
+#   1. The hook install below is done FIRST, before the fetch, so a
+#      `set -e` exit on a flaky fetch can never again leave it
+#      uninstalled. Previously the fetch ran first under `set -euo
+#      pipefail`, so a vending flake died immediately and silently
+#      disabled DAN-200's commit-blocking guard for the rest of the run —
+#      an auth hiccup turning off an enforcement gate is strictly worse
+#      than the hiccup itself.
+#   2. The fetch itself fails OPEN (loud warning, not `exit`), on purpose:
+#      preflight is a setup step, not an enforcement gate. The actual
+#      staleness *gate* is `scripts/check_merge_base.sh`, run again
+#      immediately before every merge (see CLAUDE.md) and in CI on every
+#      PR — that is where "is this branch point still current" has real,
+#      checked consequences, and it already fails closed. This script
+#      syncing to a few-minutes-stale `main` on a bad run is caught there,
+#      for free, before anything merges on top of it. Failing preflight
+#      closed instead would just turn a transient, often self-healing
+#      platform flake into a dead run every time it fires, which is the
+#      opposite of what this ticket is about: making the flake something
+#      an agent works around in one command, not something that stops it.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-git fetch origin main --quiet
+# Self-install the commit-blocking guard FIRST, every run, so it
+# self-heals even on a checkout that has never run this script before,
+# and so nothing below — most notably the fetch — can ever skip it.
+repo_root="$(git rev-parse --show-toplevel)"
+git config core.hooksPath "$repo_root/scripts/githooks"
+
+fetch_failed=""
+if ! git fetch origin main --quiet; then
+  fetch_failed=1
+  cat >&2 <<'EOF'
+WARNING: `git fetch origin main` failed.
+
+This is most likely the known intermittent GitHub identity vending flake
+(DAN-93, DAN-101, DAN-174, DAN-259, DAN-265) — the per-run managed GitHub
+identity failing to vend, not a missing or misconfigured credential, and
+not something to escalate to the board on its own. Run:
+
+    scripts/check_github_identity.sh
+
+to tell "just me" from "everyone" before concluding anything, then see
+docs/github-identity-flakes.md for the full runbook.
+
+Proceeding with the shared checkout's last-known state (preflight fails
+OPEN here — it is not a merge gate; scripts/check_merge_base.sh is, and
+it still fails closed on staleness before anything merges).
+EOF
+fi
 
 # --- reclaim harmless leftovers (never touches anything with content
 #     that isn't also verifiably present elsewhere) -----------------------
@@ -202,14 +256,21 @@ if [ -n "$dirty" ] || [ -n "$unpushed" ] || [ "${#worktree_locked_dirty[@]}" -gt
 fi
 
 git checkout main --quiet
-git pull --ff-only origin main --quiet
 
-# Self-install the commit-blocking guard every run so it self-heals even
-# on a checkout that has never run this script before.
-repo_root="$(git rev-parse --show-toplevel)"
-git config core.hooksPath "$repo_root/scripts/githooks"
-
-echo "OK: shared checkout is on main, clean, and up to date with origin/main."
+if [ -z "$fetch_failed" ]; then
+  git pull --ff-only origin main --quiet
+  echo "OK: shared checkout is on main, clean, and up to date with origin/main."
+else
+  # Don't attempt `git pull` here: it would re-run the same fetch that just
+  # failed and, under `set -e`, take down a run that is otherwise fine to
+  # proceed on. The hook is already installed (above, unconditionally) and
+  # the checkout itself is clean — only freshness is unverified, and
+  # scripts/check_merge_base.sh is what actually enforces that before
+  # anything merges on top of this (see header comment).
+  echo "OK: shared checkout is on main and clean, but NOT verified up to date" >&2
+  echo "    with origin/main — the fetch above failed. Proceeding anyway" >&2
+  echo "    (preflight fails open on fetch failure; see header comment)." >&2
+fi
 
 # --- optional: provision the isolated worktree in the same step ---------
 
