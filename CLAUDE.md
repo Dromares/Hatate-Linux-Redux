@@ -71,6 +71,15 @@ below. The guard syncing the shared checkout to `main`, and installing the
 commit-blocking hook described above, are the only mutations it performs,
 and both happen only after confirming there is nothing to lose.
 
+If the guard instead prints a `WARNING` about `git fetch origin main`
+failing, or any other GitHub operation (`push`, `gh`, a GitHub MCP tool)
+fails with an auth-shaped error, **do not assume a credential or scope
+problem and do not ask the board to reinstall anything.** Run
+`scripts/check_github_identity.sh` and read
+[`docs/github-identity-flakes.md`](docs/github-identity-flakes.md) before
+concluding anything — this exact failure has been misdiagnosed the same
+wrong way four times (DAN-93, DAN-101, DAN-174, DAN-259).
+
 The guard also doubles as a one-shot worktree provisioner for any adapter
 that isn't a Claude Code session (see below): pass a ticket id (and
 optionally a branch name) and it creates the isolated worktree for you in

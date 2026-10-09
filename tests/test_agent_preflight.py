@@ -114,6 +114,43 @@ class AgentPreflightTest(unittest.TestCase):
         status = run_git(["status", "--porcelain"], cwd=self.checkout)
         self.assertEqual(status.stdout, "")
 
+    def hooks_path(self):
+        return run_git(
+            ["config", "--get", "core.hooksPath"], cwd=self.checkout, check=False
+        ).stdout.strip()
+
+    def test_fetch_failure_still_installs_hook_and_fails_open(self):
+        """DAN-265: a flaky `git fetch` (standing in for the intermittent
+        GitHub identity vending flake - DAN-93/101/174/259) must not be
+        able to skip the DAN-200 commit-blocking hook install, and must
+        not abort a checkout that is otherwise clean and pushed."""
+        self.assertEqual(self.hooks_path(), "")
+
+        run_git(
+            ["remote", "set-url", "origin", "/nonexistent/origin.git"],
+            cwd=self.checkout,
+        )
+
+        result = self.run_preflight()
+
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertNotIn("ABORT", result.stderr)
+        # The hook must be installed even though the fetch above failed.
+        self.assertEqual(
+            self.hooks_path(),
+            str((self.checkout / "scripts" / "githooks").resolve()),
+        )
+        # Loud and specific about what happened, not an opaque git error.
+        self.assertIn("WARNING", result.stderr)
+        self.assertIn("check_github_identity.sh", result.stderr)
+        # Checkout is left clean, on main, exactly as the happy path does.
+        branch = run_git(
+            ["rev-parse", "--abbrev-ref", "HEAD"], cwd=self.checkout
+        ).stdout.strip()
+        self.assertEqual(branch, "main")
+        status = run_git(["status", "--porcelain"], cwd=self.checkout)
+        self.assertEqual(status.stdout, "")
+
     def test_reclaims_branch_squash_merged_under_a_combined_commit(self):
         # DAN-272: a branch with two commits, squash-merged on GitHub into
         # ONE commit on main. `git cherry` compares each commit's own
