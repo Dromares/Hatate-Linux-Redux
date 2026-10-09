@@ -10,6 +10,7 @@ inside the Wipe/Differences frame, so the readout fits the compare column.
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -68,6 +69,14 @@ class TestReadoutParts(unittest.TestCase):
 
 
 class TestReadoutInTheHeader(GuiTestCase):
+    def setUp(self):
+        # A session restored from an earlier test can name files that are
+        # gone, and the window then raises a modal "Missing files" box,
+        # which blocks an offscreen run for good. Nothing here is about it.
+        patcher = mock.patch("gui.main_window.message.information")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def _review_window(self, mode, measured=True):
         _app, win = make_themed_window(self, mode)
         win.action_set_theme(mode)
@@ -143,8 +152,11 @@ class TestReadoutInTheHeader(GuiTestCase):
         win = self._review_window("dark")
         win.review_stack.setCurrentIndex(1)
         win._show_comparison_controls(True)
-        QApplication.processEvents()
         tools = win.review_zoom_tools
+        # Before the event loop runs: a late worker result for the selected
+        # row can reset the view and hide the controls again.
+        self.assertTrue(tools.isVisibleTo(win.review_wipe))
+        QApplication.processEvents()
         self.assertIs(tools.parentWidget(), win.review_wipe)
         header_widgets = (win.comparison_readout, win.review_view_switch)
         for widget in header_widgets:
@@ -155,7 +167,6 @@ class TestReadoutInTheHeader(GuiTestCase):
         # top right of the frame, as in review-wipe.html
         self.assertGreater(tools.geometry().center().x(), frame.center().x())
         self.assertLess(tools.geometry().center().y(), frame.center().y())
-        self.assertTrue(tools.isVisibleTo(win.review_wipe))
         win._show_comparison_controls(False)
         self.assertFalse(tools.isVisibleTo(win.review_wipe))
 
