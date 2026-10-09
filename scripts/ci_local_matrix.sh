@@ -41,10 +41,15 @@
 # enough" or a dirty approximation of it. Run this from the worktree/
 # checkout that already has the commit under test checked out.
 #
+# It likewise refuses (exit 2, REFUSED block, no attestation block) when the
+# commit's merge-base with origin/main is not origin/main itself, i.e. the
+# branch is behind main: DAN-652 requires the attestation to be against the
+# commit rebased on current origin/main (DAN-1194).
+#
 # Exit status: 0 only if every leg (both interpreter test runs, ruff,
 # mypy) passes. Non-zero otherwise. There is no partial-green outcome:
 # a failing leg still prints the full attestation block (showing exactly
-# what failed), then the script exits non-zero.
+# what failed), then the script exits non-zero. Refusals exit 2.
 
 set -euo pipefail
 
@@ -88,7 +93,23 @@ BEHIND_MAIN="$(git rev-list --count "${MERGE_BASE_SHA}..${ORIGIN_MAIN_SHA}")"
 if [[ "$MERGE_BASE_SHA" == "$ORIGIN_MAIN_SHA" ]]; then
   MERGE_BASE_SUMMARY="up_to_date (merge-base=origin/main=${ORIGIN_MAIN_SHA})"
 else
-  MERGE_BASE_SUMMARY="stale (merge-base=${MERGE_BASE_SHA}, origin/main is ${BEHIND_MAIN} commit(s) ahead)"
+  # DAN-1194 (re-route of DAN-1046): DAN-652 says an attestation against an
+  # older head "does not count", so a stale merge-base is a refusal, not an
+  # annotation. Exit 2 like the SHA-mismatch die() above, before any
+  # provisioning/test work, and print NO attestation block - so there is no
+  # `overall: PASS` line anyone could quote from a run that did not count.
+  {
+    echo "===== CI-LOCAL-MATRIX-REFUSED ====="
+    echo "reason: stale merge-base - origin/main is ahead of the commit under test"
+    echo "sha: $ATTEST_SHA"
+    echo "branch: $BRANCH"
+    echo "merge_base: $MERGE_BASE_SHA"
+    echo "origin_main: $ORIGIN_MAIN_SHA ($BEHIND_MAIN commit(s) ahead of the merge-base)"
+    echo "action: rebase onto origin/main, push, and re-run this script on the new HEAD."
+    echo "        An attestation against an older base does not count (DAN-652)."
+    echo "===== END REFUSED ====="
+  } >&2
+  exit 2
 fi
 
 WORKDIR="$(mktemp -d -t ci-local-matrix.XXXXXX)"
