@@ -103,7 +103,12 @@ class Readout(QWidget):
             return
         self._plain = text
         for part in self._parts:
+            # Detached now, not just scheduled for deletion: until the event
+            # loop runs deleteLater the old text would still paint, under
+            # the new.
             self._layout.removeWidget(part)
+            part.hide()
+            part.setParent(None)
             part.deleteLater()
         self._parts = []
         for fragment, is_figure in split_figures(text):

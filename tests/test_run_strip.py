@@ -191,6 +191,18 @@ class TestStripVoice(_WindowCase):
                     ink = _composite_over(rgb, alpha, page)
                     self.assertGreaterEqual(_contrast_ratio(ink, page), MIN_TEXT_CONTRAST)
 
+    def test_a_new_reading_leaves_no_old_text_under_it(self):
+        """REGRESSION (found in the first screenshot): the previous
+        fragments were only scheduled for deletion, so until the event loop
+        ran they still painted, overprinting the new reading."""
+        win = self._window("dark")
+        readout = win.run_progress_label
+        readout.setText("2/8 searched")
+        readout.setText("nothing queued")
+        self.assertEqual(
+            [lab.text() for lab in readout.findChildren(QLabel)], ["nothing queued"],
+        )
+
     def test_readout_text_and_figures_lose_nothing(self):
         for text in ("2/8 searched", "waiting 38s", "ETA ~16d 22h · ends 3 Oct",
                      "SauceNAO 142/200 used today", "ETA —", "1,234/24,000 searched"):
