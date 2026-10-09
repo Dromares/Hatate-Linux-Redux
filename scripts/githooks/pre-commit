@@ -15,7 +15,9 @@
 set -euo pipefail
 
 toplevel="$(git rev-parse --show-toplevel)"
-main_worktree="$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')"
+# sed (no early exit) drains git's output; an early-exiting awk closed the
+# pipe mid-write -> SIGPIPE -> exit 128 under pipefail with many worktrees.
+main_worktree="$(git worktree list --porcelain | sed -n '1s/^worktree //p')"
 
 if [ "$toplevel" = "$main_worktree" ]; then
   cat >&2 <<'EOF'
