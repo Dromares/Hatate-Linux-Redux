@@ -17,7 +17,7 @@ from typing import Iterable, Optional
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QToolButton,
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QToolButton,
 )
 
 from core.entry_filter import (
@@ -110,6 +110,7 @@ class FilterBar(QFrame):
             "Show only rows with the statuses you tick. Only the statuses "
             "actually present in the list are offered."
         )
+        self._speak_caps(self.filter_status_button)
         layout.addWidget(self.filter_status_button)
 
         self.filter_site_button = QToolButton()
@@ -123,6 +124,7 @@ class FilterBar(QFrame):
             f'"{NO_SITE}" collects rows with no match at all - not the same as '
             '"Other", which means a match from a site with no name of its own.'
         )
+        self._speak_caps(self.filter_site_button)
         layout.addWidget(self.filter_site_button)
 
         self.filter_upscale_button = QToolButton()
@@ -133,11 +135,12 @@ class FilterBar(QFrame):
         self.filter_upscale_button.setToolTip(
             "Show only rows with the Check for Upscaling verdict you tick."
         )
+        self._speak_caps(self.filter_upscale_button)
         layout.addWidget(self.filter_upscale_button)
 
-        self.filter_clear_button = QPushButton("Clear")
+        self.filter_clear_button = widgets.pill_button("Clear", self.clear)
+        self.filter_clear_button.setMinimumHeight(widgets.INPUT_MIN_HEIGHT)
         self.filter_clear_button.setToolTip("Show everything again.")
-        self.filter_clear_button.clicked.connect(self.clear)
         layout.addWidget(self.filter_clear_button)
 
         layout.addStretch(1)
@@ -154,6 +157,14 @@ class FilterBar(QFrame):
         self._status_actions = {}
         self._site_actions = {}
         self._upscale_actions = {}
+
+    @staticmethod
+    def _speak_caps(button):
+        """The page-level mono-caps voice (Q-01 casing, DAN-1161): the
+        stylesheet's `voice="caps"` face plus an AllUppercase QFont, so
+        `.text()` and the accessible name stay "Status: all"."""
+        button.setProperty('voice', 'caps')
+        widgets.uppercase_voice(button)
 
     # -- what the owner reads -------------------------------------------
     def current_filter(self) -> EntryFilter:

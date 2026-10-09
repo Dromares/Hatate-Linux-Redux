@@ -29,14 +29,12 @@ these by name, and a redesign that renames them would be a rewrite
 wearing a redesign's clothes.
 """
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QHBoxLayout, QLabel, QProgressBar, QSizePolicy, QStackedWidget,
     QStatusBar, QVBoxLayout, QWidget,
 )
 
 from core.applog import get_logger
-from core.paths import RESOURCES_DIR
 from gui import widgets
 
 log = get_logger("gui.shell")
@@ -73,6 +71,8 @@ class _ModeStack(QStackedWidget):
         super().setCurrentWidget(widget)
         self.updateGeometry()
 
+
+MARK_GLYPH = "鏡"  # U+93E1, in the bundled Ryoku Kanji subset
 
 # (key, label, tooltip). The order is the order of the work.
 MODES = (
@@ -141,24 +141,31 @@ class ShellMixin:
         row.addWidget(self.search_toggle_btn)
 
         row.addWidget(widgets.icon_button(
-            "⚙", "Preferences…", self.action_open_settings,
+            "⚙", "Preferences…", self.action_open_settings, boxed=True,
         ))
         return bar
 
     def _build_app_mark(self):
+        """The in-window wordmark: the kanji 鏡 (mirror) beside HATATE.
+
+        `icon.svg` stays the window and taskbar icon; in the window itself
+        the mockup's mark is type (G-01). The word is passed in sentence
+        case and drawn uppercase by `QFont` capitalization, so the
+        accessible name stays "Hatate".
+        """
         mark = QWidget()
+        mark.setAccessibleName("Hatate")
         row = QHBoxLayout(mark)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(9)
 
-        icon = QIcon(str(RESOURCES_DIR / "icon.svg"))
-        if not icon.isNull():
-            glyph = QLabel()
-            glyph.setPixmap(icon.pixmap(26, 26))
-            row.addWidget(glyph)
+        glyph = QLabel(MARK_GLYPH)
+        glyph.setObjectName('MarkGlyph')
+        row.addWidget(glyph)
 
         name = QLabel("Hatate")
-        name.setObjectName("Heading")
+        name.setObjectName('MarkWord')
+        widgets.uppercase_voice(name)
         row.addWidget(name)
         return mark
 

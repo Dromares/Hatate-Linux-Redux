@@ -27,6 +27,8 @@ PAGE_MARGINS = (22, 18, 22, 18)
 PAGE_SPACING = 14
 SPLITTER_HANDLE = 12
 INPUT_MIN_HEIGHT = 38     # a single-line edit crushed below this stops being readable
+BUTTON_MIN_HEIGHT = 40    # tokens.css's page-level button, plus the 36px boxed icon below
+ICON_BOX = 36
 
 
 def card(title=None, framed=True):
@@ -188,23 +190,54 @@ def hint(text=''):
     return label
 
 
-def pill_button(text, on_click=None, primary=False):
-    """A button. `primary` gives it the flat ink-stamp fill and the weight."""
+def uppercase_voice(widget, tracking=TRACKING_LABEL):
+    """Gives a control the mockup's type voice: mono, UPPERCASE, tracked.
+
+    The uppercase is `QFont.Capitalization.AllUppercase`, not a string
+    transform - QSS has no `text-transform`, and upper-casing the string
+    would put shouting in `text()`, the accessible name and anything that
+    copies the label. Tooltips are separate strings and are untouched.
+    """
+    font = widget.font()
+    font.setCapitalization(QFont.Capitalization.AllUppercase)
+    widget.setFont(font)
+    apply_tracking(widget, tracking)
+
+
+def pill_button(text, on_click=None, primary=False, uppercase=True):
+    """A button. `primary` gives it the flat ink-stamp fill and the weight.
+
+    Page-level buttons speak the mockup's UPPERCASE mono voice. Dialogs do
+    not (ruling C-4 on DAN-1155: they are not in the mockup and keep
+    sentence case), so a dialog passes `uppercase=False`.
+    """
     button = QPushButton(text)
     if primary:
         button.setObjectName('Primary')
     button.setCursor(Qt.CursorShape.PointingHandCursor)
+    if uppercase:
+        button.setProperty('voice', 'caps')
+        button.setMinimumHeight(BUTTON_MIN_HEIGHT)
+        uppercase_voice(button)
     if on_click is not None:
         button.clicked.connect(on_click)
     return button
 
 
-def icon_button(glyph, tooltip='', on_click=None, checkable=False):
-    """A borderless glyph button - the small ones that sit beside a heading."""
+def icon_button(glyph, tooltip='', on_click=None, checkable=False, boxed=False):
+    """A borderless glyph button - the small ones that sit beside a heading.
+
+    `boxed` draws it as the top bar's square hairline box, ICON_BOX px a
+    side (the mockup's gear, G-04), for an icon that is a control in its
+    own right rather than a mark beside a heading.
+    """
     button = QPushButton(glyph)
     button.setObjectName('IconButton')
     button.setCursor(Qt.CursorShape.PointingHandCursor)
     button.setCheckable(checkable)
+    if boxed:
+        button.setProperty('boxed', True)
+        button.setFixedSize(ICON_BOX, ICON_BOX)
     if tooltip:
         button.setToolTip(tooltip)
     if on_click is not None:
@@ -225,7 +258,7 @@ def apply_tracking(widget, tracking=TRACKING_LABEL):
     widget.setFont(font)
 
 
-def segmented(choices, on_change=None, current=None, role='Segment'):
+def segmented(choices, on_change=None, current=None, role='Segment', uppercase=True):
     """Several readings of one thing, drawn as a single control.
 
     `choices` is [(key, label, tooltip)]. Returns the row widget and a
@@ -235,7 +268,9 @@ def segmented(choices, on_change=None, current=None, role='Segment'):
     Exclusivity is a real QButtonGroup rather than hand-written
     uncheck-the-others code; the one-pill look is entirely the `segment`
     property plus the stylesheet, which is why the buttons can stay
-    ordinary QPushButtons.
+    ordinary QPushButtons. Labels are drawn UPPERCASE (see
+    `uppercase_voice`); a dialog passes `uppercase=False` to keep sentence
+    case (ruling C-4).
     """
     row = QWidget()
     layout = QHBoxLayout(row)
@@ -253,7 +288,10 @@ def segmented(choices, on_change=None, current=None, role='Segment'):
         button.setObjectName(role)
         button.setCheckable(True)
         button.setCursor(Qt.CursorShape.PointingHandCursor)
-        apply_tracking(button)
+        if uppercase:
+            uppercase_voice(button)
+        else:
+            apply_tracking(button)
         if tooltip:
             button.setToolTip(tooltip)
         button.setProperty(
