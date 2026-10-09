@@ -3758,6 +3758,14 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
     # ------------------------------------------------------------------
     def action_open_settings(self):
         dialog = SettingsDialog(self.settings, self)
+        # Only enabled/port/token need the server itself to actually
+        # rebind - every other MCP setting (the tier switches, dry_run)
+        # is read live off self.settings.mcp by core/mcp_tools.gate() on
+        # the very next tool call, with no restart at all. Restarting
+        # unconditionally on every Settings save would drop a connected
+        # MCP client's session over an unrelated change, e.g. a new
+        # Hydrus key.
+        old_mcp = (self.settings.mcp.enabled, self.settings.mcp.port, self.settings.mcp.token)
         if self._run_dialog(dialog):
             dialog.apply_to_settings()
             # Pick up a changed autosave interval (or an on/off flip) now
@@ -3774,6 +3782,11 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
             # The Activity page states the engine line-up, which this
             # dialog is exactly what changes.
             self.refresh_engines()
+            new_mcp = (self.settings.mcp.enabled, self.settings.mcp.port, self.settings.mcp.token)
+            if new_mcp != old_mcp:
+                if not self._mcp_server.restart(self.settings.mcp):
+                    if self.settings.mcp.enabled and self._mcp_server.last_error:
+                        log.warning("MCP server did not restart: %s", self._mcp_server.last_error)
 
     def action_set_theme(self, mode: str):
         """Switches the theme now, without a restart.
