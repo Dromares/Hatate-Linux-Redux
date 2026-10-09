@@ -53,113 +53,113 @@ def _buttons(win, *texts):
     return found
 
 
-class _WindowCase(GuiTestCase):
+class _Shim:
+    """Collects the cleanups `make_themed_window` registers, so a window can
+    be built once per class instead of once per test."""
+
+    def __init__(self):
+        self.cleanups = []
+
+    def addCleanup(self, fn, *a, **kw):
+        self.cleanups.append((fn, a, kw))
+
+    def run_cleanups(self):
+        while self.cleanups:
+            fn, a, kw = self.cleanups.pop()
+            fn(*a, **kw)
+
+
+class _PerModeWindow:
+    """One real, themed MainWindow per mode, shared by every test in the
+    class. Building one per test (and re-theming the whole application each
+    time) re-polishes every widget earlier tests leaked, which stalled the
+    full suite; the claims here are read-only, so sharing is safe."""
+
+    MODE = "dark"
+
+    @classmethod
+    def setUpClass(cls):
+        cls._shim = _Shim()
+        _app, cls.win = make_themed_window(cls._shim, cls.MODE)
+        cls.win.resize(1440, 900)
+        cls.win.show()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.win.close()
+        cls._shim.run_cleanups()
+
     def setUp(self):
-        # Bare widgets (no window) still need an application, themed and
-        # with the bundled fonts, or the fonts under test never resolve.
-        from PyQt6.QtWidgets import QApplication
-        from gui.fonts import register_fonts
-        self.app = QApplication.instance() or QApplication([])
-        register_fonts()
-        self.app.setStyleSheet(theme.stylesheet("dark"))
-
-    def _window(self, mode="dark"):
-        _app, win = make_themed_window(self, mode)
-        win.action_set_theme(mode)
-        win.resize(1440, 900)
-        win.show()
-        self.addCleanup(win.close)
-        return win
+        self.win.set_mode("queue")
 
 
-class TestWordmark(_WindowCase):
+class _WordmarkChecks:
     """G-01"""
 
     def test_kanji_mark_is_ryoku_kanji_at_22px(self):
-        for mode in MODES:
-            with self.subTest(mode=mode):
-                win = self._window(mode)
-                glyph = win.findChild(QLabel, "MarkGlyph")
-                self.assertIsNotNone(glyph, "the in-window mark is not a kanji label")
-                self.assertEqual(glyph.text(), "鏡")
-                font = _font(glyph)
-                self.assertEqual(font.family(), "Ryoku Kanji")
-                self.assertEqual(font.pixelSize(), 22)
+        glyph = self.win.findChild(QLabel, "MarkGlyph")
+        self.assertIsNotNone(glyph, "the in-window mark is not a kanji label")
+        self.assertEqual(glyph.text(), "鏡")
+        font = _font(glyph)
+        self.assertEqual(font.family(), "Ryoku Kanji")
+        self.assertEqual(font.pixelSize(), 22)
 
     def test_word_is_mono_uppercase_tracked_but_text_stays_sentence_case(self):
-        win = self._window()
-        word = win.findChild(QLabel, "MarkWord")
+        word = self.win.findChild(QLabel, "MarkWord")
         self.assertIsNotNone(word)
         self.assertEqual(word.text(), "Hatate")
         self.assertTrue(_is_caps_mono(word), _font(word).toString())
 
     def test_mark_keeps_its_accessible_name(self):
-        win = self._window()
-        word = win.findChild(QLabel, "MarkWord")
+        word = self.win.findChild(QLabel, "MarkWord")
         self.assertEqual(word.parentWidget().accessibleName(), "Hatate")
 
-    def test_the_kanji_glyph_exists_in_the_bundled_face(self):
-        from PyQt6.QtGui import QFontMetrics
-        self._window()
-        font = QFont("Ryoku Kanji")
-        self.assertTrue(QFontMetrics(font).inFontUcs4(ord(shell.MARK_GLYPH)))
 
-
-class TestUppercaseVoice(_WindowCase):
+class _UppercaseChecks:
     """G-02, G-03, V-08, E-04, Y-04, Q-01 (casing)"""
 
     def test_mode_tabs(self):
-        for mode in MODES:
-            with self.subTest(mode=mode):
-                win = self._window(mode)
-                for key, label, tip in shell.MODES:
-                    button = win.mode_buttons[key]
-                    self.assertTrue(_is_caps_mono(button), key)
-                    self.assertEqual(button.text(), label)
-                    self.assertEqual(button.toolTip(), tip)
+        for key, label, tip in shell.MODES:
+            button = self.win.mode_buttons[key]
+            self.assertTrue(_is_caps_mono(button), key)
+            self.assertEqual(button.text(), label)
+            self.assertEqual(button.toolTip(), tip)
 
     def test_start_search(self):
-        for mode in MODES:
-            with self.subTest(mode=mode):
-                win = self._window(mode)
-                button = win.search_toggle_btn
-                self.assertTrue(_is_caps_mono(button))
-                self.assertEqual(button.text(), "▶  Start Search")
-                self.assertGreaterEqual(button.height(), widgets.BUTTON_MIN_HEIGHT)
+        button = self.win.search_toggle_btn
+        self.assertTrue(_is_caps_mono(button))
+        self.assertEqual(button.text(), "▶  Start Search")
+        self.assertGreaterEqual(button.height(), widgets.BUTTON_MIN_HEIGHT)
 
     def test_review_page_buttons(self):  # V-08
-        win = self._window()
-        win.set_mode("review")
+        self.win.set_mode("review")
         for text, button in _buttons(
-            win, "Add tags…", "Remove", "Edit",
+            self.win, "Add tags…", "Remove", "Edit",
         ).items():
             with self.subTest(button=text):
                 self.assertTrue(_is_caps_mono(button))
                 self.assertGreaterEqual(button.height(), widgets.BUTTON_MIN_HEIGHT)
-        for button in win.review_view_buttons.values():
+        for button in self.win.review_view_buttons.values():
             self.assertTrue(_is_caps_mono(button), button.text())
 
     def test_activity_page_buttons(self):  # Y-04
-        win = self._window()
-        win.set_mode("activity")
-        for text, button in _buttons(win, "Parser health…", "Clear search cache…").items():
+        self.win.set_mode("activity")
+        for text, button in _buttons(
+            self.win, "Parser health…", "Clear search cache…",
+        ).items():
             with self.subTest(button=text):
                 self.assertTrue(_is_caps_mono(button))
 
     def test_empty_queue_buttons(self):  # E-04
-        win = self._window()
-        win.entries[:] = []
-        win.table_model.refresh_all(win.entries)
-        win._refresh_queue_empty_state()
+        self.win._refresh_queue_empty_state()
         for text, button in _buttons(
-            win, "Add files…", "Add folder…", "Query Hydrus…",
+            self.win, "Add files…", "Add folder…", "Query Hydrus…",
         ).items():
             with self.subTest(button=text):
                 self.assertTrue(_is_caps_mono(button))
 
     def test_filter_band_controls(self):  # Q-01 casing
-        win = self._window()
-        band = win.filter_bar
+        band = self.win.filter_bar
         for button in (band.filter_status_button, band.filter_site_button,
                        band.filter_upscale_button, band.filter_clear_button):
             with self.subTest(button=button.text()):
@@ -169,10 +169,76 @@ class TestUppercaseVoice(_WindowCase):
         self.assertEqual(band.filter_status_button.text(), "Status: all")
         self.assertEqual(band.filter_clear_button.text(), "Clear")
 
+
+class _GearChecks:
+    """G-04"""
+
+    def _gear(self):
+        for button in self.win.findChildren(QPushButton):
+            if button.text() == "⚙":
+                return button
+        self.fail("no gear button")
+
+    def test_gear_is_a_36px_square(self):
+        gear = self._gear()
+        self.assertEqual((gear.width(), gear.height()), (36, 36))
+        self.assertTrue(gear.property("boxed"))
+        self.assertEqual(gear.toolTip(), "Preferences…")
+
+    def test_gear_edge_is_painted(self):
+        img = self._gear().grab().toImage()
+        self.assertNotEqual(
+            img.pixelColor(0, 18).rgb(), img.pixelColor(18, 18).rgb(),
+            "no hairline box",
+        )
+
+
+class _TitleChecks:
+    """G-10, ruling C-2: serif stays, size grows to 36px."""
+
+    def test_titles_are_source_serif_36px(self):
+        titles = self.win.findChildren(QLabel, "ScreenTitle")
+        self.assertEqual(sorted(t.text() for t in titles), ["Queue.", "Review."])
+        for title in titles:
+            font = _font(title)
+            self.assertEqual(font.family(), "Source Serif 4")
+            self.assertEqual(font.pixelSize(), 36)
+
+
+class _AllChecks(
+    _PerModeWindow, _WordmarkChecks, _UppercaseChecks, _GearChecks, _TitleChecks,
+):
+    pass
+
+
+class TestDark(_AllChecks, GuiTestCase):
+    MODE = "dark"
+
+
+class TestLight(_AllChecks, GuiTestCase):
+    MODE = "light"
+
+
+class TestBareWidgets(GuiTestCase):
+    """Checks that need no window. The app-wide stylesheet is left alone
+    except where a test renders pixels."""
+
+    def setUp(self):
+        from PyQt6.QtWidgets import QApplication
+        from gui.fonts import register_fonts
+        self.app = QApplication.instance() or QApplication([])
+        register_fonts()
+
+    def test_the_kanji_glyph_exists_in_the_bundled_face(self):
+        from PyQt6.QtGui import QFontMetrics
+        font = QFont("Ryoku Kanji")
+        self.assertTrue(QFontMetrics(font).inFontUcs4(ord(shell.MARK_GLYPH)))
+
     def test_uppercase_is_painted_not_typed(self):
         """A sentence-case button must render pixel-identical to a button
         whose text is already UPPERCASE, in the same font."""
-        self._window()
+        self.app.setStyleSheet(theme.stylesheet("dark"))
+        self.addCleanup(lambda: self.app.setStyleSheet(""))
         lower = widgets.pill_button("Add tags…")
         upper = widgets.pill_button("ADD TAGS…")
         for b in (lower, upper):
@@ -184,17 +250,24 @@ class TestUppercaseVoice(_WindowCase):
         plain.resize(160, 40)
         self.assertNotEqual(lower.grab().toImage(), plain.grab().toImage())
 
+    def test_other_icon_buttons_stay_borderless_and_small(self):
+        small = widgets.icon_button("⧉", "Copy")
+        self.assertFalse(small.property("boxed"))
+        self.assertGreater(small.maximumWidth(), widgets.ICON_BOX)  # not pinned to a box
 
-class TestDialogsKeepSentenceCase(_WindowCase):
-    """Ruling C-4 on DAN-1155: dialogs are not in the mockup."""
+    def test_stylesheet_rule_for_titles_is_36px(self):
+        self.assertIn("font-size: 36px", theme.stylesheet("dark").split(
+            "QLabel#ScreenTitle")[1].split("}")[0])
 
+    # Ruling C-4 on DAN-1155: dialogs are not in the mockup.
     def test_opt_out_leaves_the_font_alone(self):
         button = widgets.pill_button("Generate new token", uppercase=False)
         self.assertNotEqual(button.font().capitalization(), CAPS)
         self.assertIsNone(button.property("voice"))
 
-    def test_settings_dialog_helper_buttons(self):
-        self._window()
+    def test_settings_dialog_helper_buttons_keep_sentence_case(self):
+        # Unthemed on purpose: capitalization is a QFont property, set in
+        # Python, and a themed 2,500-line dialog is the slowest thing here.
         dialog = SettingsDialog(Settings())
         self.addCleanup(dialog.deleteLater)
         for button in (dialog.mcp_open_log_btn, dialog.mcp_restart_btn):
@@ -207,61 +280,6 @@ class TestDialogsKeepSentenceCase(_WindowCase):
         self.assertFalse(
             [b for b in dialog.findChildren(QToolButton)
              if b.property("voice") == "caps"])
-
-
-class TestBoxedGear(_WindowCase):
-    """G-04"""
-
-    def _gear(self, win):
-        for button in win.findChildren(QPushButton):
-            if button.text() == "⚙":
-                return button
-        self.fail("no gear button")
-
-    def test_gear_is_a_36px_square(self):
-        for mode in MODES:
-            with self.subTest(mode=mode):
-                gear = self._gear(self._window(mode))
-                self.assertEqual((gear.width(), gear.height()), (36, 36))
-                self.assertTrue(gear.property("boxed"))
-                self.assertEqual(gear.toolTip(), "Preferences…")
-
-    def test_gear_edge_is_painted(self):
-        for mode in MODES:
-            with self.subTest(mode=mode):
-                gear = self._gear(self._window(mode))
-                img = gear.grab().toImage()
-                page = img.pixelColor(18, 18)
-                edge = img.pixelColor(0, 18)
-                self.assertNotEqual(edge.rgb(), page.rgb(), "no hairline box")
-
-    def test_other_icon_buttons_stay_borderless_and_small(self):
-        self._window()
-        small = widgets.icon_button("⧉", "Copy")
-        self.assertFalse(small.property("boxed"))
-        self.assertLess(small.sizeHint().width(), widgets.ICON_BOX + 20)
-
-
-class TestScreenTitles(_WindowCase):
-    """G-10, ruling C-2: serif stays, size grows to 36px."""
-
-    def test_titles_are_source_serif_36px(self):
-        for mode in MODES:
-            with self.subTest(mode=mode):
-                win = self._window(mode)
-                titles = [
-                    label for label in win.findChildren(QLabel, "ScreenTitle")
-                ]
-                self.assertEqual(
-                    sorted(t.text() for t in titles), ["Queue.", "Review."])
-                for title in titles:
-                    font = _font(title)
-                    self.assertEqual(font.family(), "Source Serif 4")
-                    self.assertEqual(font.pixelSize(), 36)
-
-    def test_stylesheet_rule_matches(self):
-        self.assertIn("font-size: 36px", theme.stylesheet("dark").split(
-            "QLabel#ScreenTitle")[1].split("}")[0])
 
 
 if __name__ == "__main__":
