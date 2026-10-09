@@ -1,6 +1,6 @@
 # Decision: a ticket's own acceptance criteria outrank the bucket-3 self-merge default
 
-**Status:** proposed, 2026-10-07 (ruling by Cloud, operationalized under DAN-716; provenance DAN-220, DAN-652, DAN-496).
+**Status:** accepted, 2026-10-07 (ruling by Cloud, operationalized under DAN-716; provenance DAN-220, DAN-652, DAN-496).
 
 ## Background
 
@@ -84,12 +84,12 @@ speaks — like DAN-496's own criterion #5, like this one — never reaches (3).
 
 ## Provenance
 
-- [DAN-220](https://github.com/Dromares/Hatate-Linux-Redux) — origin of the
+- DAN-220 — origin of the
   self-merge refusal and the "name who merges" convention.
-- [DAN-652](https://github.com/Dromares/Hatate-Linux-Redux) — the three-seat
+- DAN-652 — the three-seat
   rule (author / verifier / executor) and the interim local-matrix
   attestation gate.
-- [DAN-496](https://github.com/Dromares/Hatate-Linux-Redux) — the incident:
+- DAN-496 — the incident:
   bucket-3 self-merge executed over the ticket's own named-executor
   criterion. `078b32d` stands; this document is the fix for the gap that
   let it happen, not a re-litigation of that commit.
