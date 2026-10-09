@@ -13,6 +13,7 @@ re-run a search, and they are one `elif` apart.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from typing import Optional
 
 from core.image_compare import compare_file_sizes, compare_sizes
@@ -204,3 +205,47 @@ def comparison_banner_colour(entry, candidate, mode: str) -> str:
     (main_window's `setStyleSheet`) that cannot use a tier name
     directly."""
     return theme.palette(mode)[comparison_banner_tier(entry, candidate)]
+
+
+@dataclass(frozen=True)
+class ComparisonReadout:
+    """The compare header's readout, as parts the widget can style apart:
+    `● 96% SIMILARITY ▲ 2.5× larger`. Every part is "" when it has
+    nothing to say, so the widget hides the part rather than showing a
+    dash."""
+    glyph: str = ""
+    value: str = ""
+    label: str = ""
+    diff: str = ""
+    tier: str = BANNER_NEUTRAL
+    tooltip: str = ""
+
+
+def comparison_readout(entry, candidate) -> ComparisonReadout:
+    """The number a reviewer decides on, pulled out of the old one-line
+    banner. The measured/ranking distinction (B-5) is kept in two
+    channels: the label says RANKING instead of SIMILARITY, and the
+    value keeps similarity_label's "~". The banner's file-size and
+    "different shape" remarks, which a 28px readout has no room for, move
+    to the tooltip so nothing the banner said is lost."""
+    if candidate is None:
+        return ComparisonReadout()
+
+    glyph = value = label = ""
+    if entry.similarity is not None:
+        value = similarity_label(entry.similarity, entry.similarity_measured)
+        label = "Similarity" if entry.similarity_measured else "Ranking"
+        glyph = theme.status_glyph("good" if entry.similarity_measured else "estimated")
+
+    comparison = compare_sizes(
+        entry.local_width or 0, entry.local_height or 0,
+        candidate.width or 0, candidate.height or 0,
+    )
+    diff = comparison.verdict
+    if diff and comparison.remote_is_bigger:
+        diff = f"\u25b2 {diff}"
+    return ComparisonReadout(
+        glyph=glyph, value=value, label=label, diff=diff,
+        tier=comparison_banner_tier(entry, candidate),
+        tooltip=comparison_banner_text(entry, candidate),
+    )

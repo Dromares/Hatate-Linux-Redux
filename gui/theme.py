@@ -122,6 +122,8 @@ MODES = ('system', 'dark', 'light')
 FONT_SERIF = "'Source Serif 4', Georgia, serif"
 FONT_SANS = "'Space Grotesk', 'Helvetica Neue', Arial, sans-serif"
 FONT_MONO = "'JetBrains Mono', 'DejaVu Sans Mono', 'Courier New', monospace"
+# The bundled four-glyph subset (力 鏡 動 空); the wordmark draws 鏡 with it.
+FONT_KANJI = "'Ryoku Kanji', 'Noto Serif CJK JP', serif"
 
 # One glyph per status, used as a scannable silhouette down a column
 # instead of a hue - a shape reads the same to every eye, which a tint
@@ -410,13 +412,71 @@ def stylesheet(mode):
     }}
 
     /* ---- a screen's own title ("Queue.", "Review.") - bigger than a
-       card heading and always the first thing on the page. ---- */
+       card heading and always the first thing on the page. 36px is the
+       mockup's --text-display; the face stays Source Serif 4 (ruling C-2
+       on DAN-1155: the mockup rendered Space Grotesk only because of a
+       CSS comment bug, DAN-1156 M-2). ---- */
     QLabel#ScreenTitle {{
             font-family: {font_serif};
-            font-size: 28px;
+            font-size: 36px;
             font-weight: 600;
             background: transparent;
     }}
+
+    /* ---- the in-window wordmark: 鏡 in Ryoku Kanji, then HATATE in the
+       mono caps voice (uppercase and tracking are set on the QLabel's
+       QFont - QSS has no text-transform). ---- */
+    QLabel#MarkGlyph {{
+            font-family: {font_kanji};
+            font-size: 22px;
+            background: transparent;
+    }}
+    QLabel#MarkWord {{
+            font-family: {font_mono};
+            font-size: 13px;
+            font-weight: 700;
+            background: transparent;
+    }}
+
+    /* ---- the compare header's readout (DAN-1169): glyph, 28px serif
+       value, mono-caps label, size ratio. The ratio's tier is a dynamic
+       property so a theme switch repaints it without Python's help. ---- */
+    QFrame#ZoomTools {{
+            background: {card};
+            border: 1px solid {ink_46};
+    }}
+    QLabel#ReadoutGlyph {{
+            font-size: 13px;
+            color: {ink_65};
+            background: transparent;
+    }}
+    QLabel#ReadoutValue {{
+            font-family: {font_serif};
+            font-size: 28px;
+            font-weight: 600;
+            color: {ink_100};
+            background: transparent;
+    }}
+    QLabel#ReadoutLabel {{
+            font-family: {font_mono};
+            font-size: 11px;
+            color: {ink_65};
+            background: transparent;
+    }}
+    QLabel#ReadoutDiff {{
+            font-family: {font_mono};
+            font-size: 11px;
+            color: {ink_65};
+            background: transparent;
+    }}
+    QLabel#ReadoutDiff[tier="ink_100"] {{
+            font-family: {font_mono};
+            color: {ink_100};
+            font-weight: 700;
+    }}
+    QLabel#ReadoutDiff[tier="ink_65"] {{ color: {ink_65}; }}
+    QLabel#ReadoutDiff[tier="ink_45"] {{ color: {ink_65}; }}
+
     QLabel#Muted, QLabel#Hint {{
             color: {ink_65};
             background: transparent;
@@ -522,6 +582,16 @@ def stylesheet(mode):
             padding: 11px 26px;
             font-size: 14px;
     }}
+    /* Page-level buttons speak the mockup's mono caps voice. The
+       capitalization and tracking are on the button's QFont
+       (widgets.uppercase_voice); a dialog's buttons are not marked
+       `voice=caps` and keep the sans (ruling C-4). */
+    QPushButton[voice="caps"] {{
+            font-family: {font_mono};
+            font-size: 12px;
+            font-weight: 700;
+    }}
+    QPushButton#Primary[voice="caps"] {{ font-size: 13px; }}
     QPushButton#Primary:pressed {{ background: {stamp_bg}; }}
     QPushButton#Primary:disabled {{
             background: {ink_18};
@@ -550,6 +620,14 @@ def stylesheet(mode):
     }}
     QPushButton#IconButton:hover {{ color: {ink_100}; background: {card_alt}; }}
     QPushButton#IconButton:checked {{ color: {ink_100}; background: {card_alt}; }}
+    /* The top bar's gear: a 36px square with the hairline every other
+       control carries. Size is fixed in widgets.icon_button. */
+    QPushButton#IconButton[boxed="true"] {{
+            border: 1px solid {ink_46};
+            padding: 0;
+            font-size: 17px;
+    }}
+    QPushButton#IconButton[boxed="true"]:hover {{ border-color: {ink_58}; }}
 
     /* ---- the segmented control ----
        Several readings of one thing, drawn as one control rather than
@@ -623,6 +701,11 @@ def stylesheet(mode):
             color: {ink_100};
             border: 1px solid {ink_46};
             padding: 7px 14px;
+    }}
+    QToolButton[voice="caps"] {{
+            font-family: {font_mono};
+            font-size: 12px;
+            font-weight: 700;
     }}
     QToolButton:hover {{ border-color: {ink_58}; }}
     QToolButton:disabled {{ color: {ink_45}; border-color: {ink_46}; }}
@@ -822,5 +905,5 @@ def stylesheet(mode):
             border: 1px solid {ink_18};
             padding: 6px 8px;
     }}
-    """.format(**p, font_serif=FONT_SERIF, font_sans=FONT_SANS, font_mono=FONT_MONO,
+    """.format(**p, font_serif=FONT_SERIF, font_sans=FONT_SANS, font_mono=FONT_MONO, font_kanji=FONT_KANJI,
                glyph_font=STATUS_GLYPH_FONT)

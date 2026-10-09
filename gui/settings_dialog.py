@@ -2245,7 +2245,8 @@ class SettingsDialog(QDialog):
         token_row.addWidget(self.mcp_token)
         token_row.addWidget(widgets.icon_button(
             "⧉", "Copy token to clipboard", self._copy_mcp_token))
-        token_row.addWidget(widgets.pill_button("Generate new token", self._generate_mcp_token))
+        token_row.addWidget(widgets.pill_button(
+            "Generate new token", self._generate_mcp_token, uppercase=False))
         form.addRow("Token:", token_row)
         self.mcp_token_hint = widgets.hint("")
         self.mcp_token.textEdited.connect(lambda _text: self.mcp_token_hint.setText(""))
@@ -2312,10 +2313,11 @@ class SettingsDialog(QDialog):
         buttons = QHBoxLayout()
         buttons.addStretch(1)
         self.mcp_open_log_btn = widgets.pill_button(
-            "Open the log", lambda: self._mcp_main_window.action_view_logs())
+            "Open the log", lambda: self._mcp_main_window.action_view_logs(),
+            uppercase=False)
         buttons.addWidget(self.mcp_open_log_btn)
         self.mcp_restart_btn = widgets.pill_button(
-            "Restart server", self._mcp_restart_server)
+            "Restart server", self._mcp_restart_server, uppercase=False)
         buttons.addWidget(self.mcp_restart_btn)
         layout.addLayout(buttons)
         return card
@@ -2534,6 +2536,7 @@ class SettingsDialog(QDialog):
         self.mcp_audit_filter_row, self.mcp_audit_filter_buttons = widgets.segmented(
             [("actions", "Actions"), ("all", "All calls")],
             on_change=self._on_mcp_audit_filter_changed, current="actions",
+            uppercase=False,
         )
         header.addWidget(self.mcp_audit_filter_row)
         layout.addLayout(header)

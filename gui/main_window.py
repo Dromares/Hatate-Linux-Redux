@@ -82,7 +82,7 @@ from gui.settings_dialog import SettingsDialog
 from gui.filter_bar import FilterBar
 from gui import review_shortcuts
 from gui.preview_text import (
-    comparison_banner_colour, comparison_banner_text, human_size,
+    ComparisonReadout, comparison_readout, human_size,
     local_image_info_text, matched_caption, matched_image_info_text,
     no_candidate_text,
 )
@@ -940,7 +940,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
             self.matched_preview.setPixmap(QPixmap())
             self.matched_preview.setText("No match yet")
             self.matched_info_label.setText("")
-            self.comparison_banner.setText("")
+            self.set_comparison_readout(ComparisonReadout())
             self.matched_caption.setText("Matched image:")
             self._populate_candidate_combo(None)
             return
@@ -955,13 +955,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         self._populate_candidate_combo(entry)
 
         candidate = entry.selected_candidate
-        banner = comparison_banner_text(entry, candidate)
-        self.comparison_banner.setText(banner)
-        mode = theme.resolve_mode(self.settings.theme)
-        self.comparison_banner.setStyleSheet(
-            f"color: {comparison_banner_colour(entry, candidate, mode)}; font-weight: bold; "
-            "font-size: 13px; padding: 2px;"
-        )
+        self.set_comparison_readout(comparison_readout(entry, candidate))
         full_resolution = self.full_resolution_match(entry)
         if full_resolution is not None:
             # Already fetched by Wipe/Differences - sharper than the

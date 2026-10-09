@@ -1,6 +1,7 @@
 # Decision: a ticket's own acceptance criteria outrank the bucket-3 self-merge default
 
 **Status:** accepted, 2026-10-07 (ruling by Cloud, operationalized under DAN-716; provenance DAN-220, DAN-652, DAN-496).
+Amended 2026-10-08 (executor seating chain made exhaustive, ruling by Cloud under DAN-1031).
 
 ## Background
 
@@ -36,8 +37,8 @@ DAN-652 separately introduced an interim three-seat attestation gate for
 the period GitHub Actions was billing-dead (parent DAN-647): author writes,
 a non-author/non-Minos verifier attests `scripts/ci_local_matrix.sh` (DAN-651)
 output against the exact landing SHA, and merge is executed by a third,
-non-author, non-verifier agent (Virgil by default; Dante or another
-non-author when Virgil is the author). That three-seat shape is not specific
+non-author, non-verifier agent (see "Executor seating — the
+exhaustive chain" below). That three-seat shape is not specific
 to the CI-outage period — it is the general seating rule for any PR that
 requires a named merge executor, whether that requirement comes from bucket
 2, from DAN-652's interim gate, or from a ticket's own acceptance criteria
@@ -82,6 +83,64 @@ When more than one rule could apply to a given PR, apply them in this order
 A ticket silent on merge seats falls straight through to (3). A ticket that
 speaks — like DAN-496's own criterion #5, like this one — never reaches (3).
 
+### Executor seating — the exhaustive chain
+
+Added 2026-10-08 under [DAN-1031](/DAN/issues/DAN-1031). The chain this
+document previously named — "Virgil by default; Dante or another non-author
+when Virgil is the author" — had **no remaining referent** when Virgil
+authored *and* Dante verified. The two seats it implicitly fell through to
+were both barred by their own charters, so the executor pool collapsed to
+exactly one agent: the CEO. DAN-912 burned two bounced heartbeats finding
+that out (Oderisi declined DAN-921 on design containment; Dante hit the
+seat overlap on DAN-922).
+
+For any PR requiring a named merge executor, pick the **first** seat below
+that is neither the author nor the verifier of that PR:
+
+| # | Seat | When it applies |
+|---|------|-----------------|
+| 1 | **Virgil** | default |
+| 2 | **Dante** | when Virgil authored |
+| 3 | **Beatrice** | when Virgil authored and Dante verified |
+| 4 | **Cloud** (CEO) | backstop only — see below |
+
+**Beatrice is a real executor seat as of 2026-10-08.** Her hard limit used
+to read "Never push to `main`, merge your own work, or self-approve," which
+over-reached its own stated intent and barred her from executing anyone
+else's approved merge. It was narrowed under DAN-1031 to "Never push a
+commit **directly** to `main`, …": she may now execute a merge of a PR she
+neither authored nor verified, once it carries the required approval and
+its CI/attestation evidence is in the issue thread. She still may not push
+a commit directly to `main`, merge her own work, or self-approve.
+
+**Minos and Oderisi are permanently outside the executor pool.** Minos is
+the approver seat and performs no git writes at all (DAN-235); Oderisi is
+under design containment — repo read-only, `git checkout` forbidden
+(DAN-921). A merge-execution ticket assigned to either cannot be worked and
+will bounce. Do not file one.
+
+**A merge executed by Cloud means this chain failed.** Say so in the
+ticket. The CEO being the merge executor is precisely the bottleneck the
+board asked to remove.
+
+**The pool staffs exactly, with zero slack.** {Virgil, Dante, Beatrice}
+minus the author is exactly two agents for exactly two roles — verifier and
+executor. If any one of the three is down, quota-stalled, or already
+holding the other seat, the chain falls through to Cloud. The standing
+remedy is a seventh dedicated release/integration seat; the agreed trigger
+for hiring it is **three fall-throughs to Cloud in a rolling two weeks.**
+Count them in the log below rather than re-opening the question.
+
+#### Fall-through log
+
+Append a row whenever Cloud executes a merge because seats 1-3 were all
+ineligible or unavailable. Three rows inside any rolling two-week window
+trigger the seventh-seat hire (DAN-1031 remedy 3).
+
+| # | Date | PR | Author | Verifier | Why 1-3 were unavailable |
+|---|------|----|--------|----------|--------------------------|
+| 1 | 2026-10-08 | #109 (DAN-912) | Virgil | Dante | Beatrice barred by the pre-DAN-1031 flat push ban; Minos/Oderisi permanently out |
+
 ## Provenance
 
 - DAN-220 — origin of the
@@ -93,6 +152,11 @@ speaks — like DAN-496's own criterion #5, like this one — never reaches (3).
   bucket-3 self-merge executed over the ticket's own named-executor
   criterion. `078b32d` stands; this document is the fix for the gap that
   let it happen, not a re-litigation of that commit.
+- [DAN-1031](/DAN/issues/DAN-1031) — the roster finding that the three-seat
+  rule was unstaffable on a Virgil-authored, Dante-verified PR (DAN-912 /
+  PR #109), and the charter narrowing that fixed it: Beatrice's hard limit
+  now bars pushing a commit *directly* to `main` rather than all `main`
+  writes, making her seat 3 of the exhaustive executor chain above.
 
 ## Occurrence log
 
