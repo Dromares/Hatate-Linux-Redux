@@ -274,6 +274,19 @@ def _fsync_directory(directory: Path) -> None:
         os.close(fd)
 
 
+def has_saved_session() -> bool:
+    """Whether the app's own automatic session exists on disk at all, in
+    either store.
+
+    Used to tell a genuinely empty queue (nothing was ever saved) apart
+    from a session that exists but load_session() still came back empty -
+    the latter only happens when the file is unreadable, corrupt, or a
+    crash landed before the first write finished, which is worth surfacing
+    differently after an unclean shutdown (DAN-487)."""
+    from . import session_db
+    return session_db.SESSION_DB.exists() or SESSION_FILE.exists()
+
+
 def load_session(path: Union[str, Path, None] = None) -> List[ImageEntry]:
     """Restores the working list, or an empty list if there's nothing
     saved or it can't be read.

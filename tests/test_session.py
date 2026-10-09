@@ -206,6 +206,24 @@ class TestSessionRoundTrip(unittest.TestCase):
         self.assertEqual(len(restored), 1)
         self.assertEqual(restored[0].path, "/tmp/ok.png")
 
+    def test_has_saved_session_is_false_on_a_fresh_install(self):
+        """DAN-487: load_session() returning [] does not say WHY - this is
+        what the empty-queue case must be told apart from below."""
+        self.assertFalse(self.session.has_saved_session())
+
+    def test_has_saved_session_is_true_once_something_is_saved(self):
+        self.session.save_session([self._entry()])
+        self.assertTrue(self.session.has_saved_session())
+
+    def test_has_saved_session_is_true_for_a_corrupt_file_too(self):
+        """REGRESSION target: a session that exists but is corrupt/
+        unreadable must still count as "there was something to restore" -
+        that's exactly the case DAN-487 exists to distinguish from a
+        queue that was always empty."""
+        self.paths.SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.SESSION_FILE.write_text("{ not valid json")
+        self.assertEqual(self.session.load_session(), [])
+        self.assertTrue(self.session.has_saved_session())
 
 
 class TestMatchedUrlLogRotation(unittest.TestCase):

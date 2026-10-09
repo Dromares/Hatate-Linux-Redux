@@ -21,11 +21,11 @@ class LogViewerDialog(QDialog):
     QThread destroyed mid-run - never gets as far as writing to app.log, so
     that diagnosis lives in a separate file this dialog can switch to."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, show_crash_log: bool = False):
         super().__init__(parent)
         self.setWindowTitle("Logs")
         self.resize(760, 480)
-        self._showing_crash_log = False
+        self._showing_crash_log = show_crash_log
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(*widgets.PAGE_MARGINS)
@@ -54,7 +54,9 @@ class LogViewerDialog(QDialog):
         open_btn.clicked.connect(self._open_log_folder)
         btn_row.addWidget(open_btn)
 
-        self.crash_log_btn = QPushButton("View Crash Log")
+        self.crash_log_btn = QPushButton(
+            "View App Log" if show_crash_log else "View Crash Log"
+        )
         self.crash_log_btn.clicked.connect(self._toggle_crash_log)
         btn_row.addWidget(self.crash_log_btn)
 
@@ -64,7 +66,9 @@ class LogViewerDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self.accept)
-        buttons.button(QDialogButtonBox.StandardButton.Close).clicked.connect(self.accept)
+        close_button = buttons.button(QDialogButtonBox.StandardButton.Close)
+        assert close_button is not None  # just asked the box to make this exact button
+        close_button.clicked.connect(self.accept)
         layout.addWidget(buttons)
 
         self.refresh()

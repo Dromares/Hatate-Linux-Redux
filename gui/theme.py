@@ -322,6 +322,44 @@ def stylesheet(mode):
             background: {card};
     }}
 
+    /* ---- the crash-recovery notice (DAN-660) - same flat-panel shape
+       as Card, named separately because it carries its own hairline
+       border (an ordinary Card doesn't) so it still reads as "something
+       happened" against an otherwise identical page. No new ink tier or
+       glyph here - RunBannerGlyph reuses STATUS_GLYPHS['poor']/
+       STATUS_WEIGHTS['poor'] exactly, which is why its colour is
+       {ink_100} rather than a dedicated token. ---- */
+    QFrame#RunBanner {{
+            background: {card};
+            border: 1px solid {ink_46};
+    }}
+    QLabel#RunBannerGlyph {{
+            font-family: '{glyph_font}', {font_sans};
+            font-size: 20px;
+            color: {ink_100};
+            background: transparent;
+    }}
+    /* No font-weight here: Space Grotesk (the default QWidget family)
+       ships weight 400 only - a declared 600 would silently render as
+       400 anyway (DAN-148's TestFontWeightsMatchTheRegisteredFace would
+       catch it). ink_100 alone carries the emphasis, same as
+       STATUS_WEIGHTS' "ink-100 bold for needs-a-decision" above - that
+       pairing is already a colour tier standing in for weight, not a
+       literal font-weight declaration. */
+    QLabel#RunBannerHead {{
+            color: {ink_100};
+            background: transparent;
+    }}
+    QLabel#RunBannerBody {{
+            color: {ink_65};
+            background: transparent;
+    }}
+    QLabel#RunBannerDiscard {{
+            color: {ink_65};
+            background: transparent;
+    }}
+    QLabel#RunBannerDiscard:hover {{ color: {ink_100}; }}
+
     QLabel#Heading {{
             font-family: {font_serif};
             font-size: 17px;
@@ -736,4 +774,5 @@ def stylesheet(mode):
             border: 1px solid {ink_18};
             padding: 6px 8px;
     }}
-    """.format(**p, font_serif=FONT_SERIF, font_sans=FONT_SANS, font_mono=FONT_MONO)
+    """.format(**p, font_serif=FONT_SERIF, font_sans=FONT_SANS, font_mono=FONT_MONO,
+               glyph_font=STATUS_GLYPH_FONT)

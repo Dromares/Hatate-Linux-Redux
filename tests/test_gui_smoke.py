@@ -4755,15 +4755,18 @@ class TestPersistedQuotaPauseShownOnStartup(GuiTestCase):
             win.close()
             win.deleteLater()
 
-    def test_a_persisted_pause_does_not_clobber_an_unclean_shutdown_restore(self):
-        """DAN-485 x DAN-486: a crash that happened mid-pause restores two
-        true things at once - the crash recovery and the still-active
-        pause. _show_persisted_quota_pause used to run after
-        _restore_saved_session and overwrite its message outright, so the
-        "Run interrupted" notice silently vanished whenever a pause also
-        happened to be persisted."""
+    def test_a_persisted_pause_does_not_clobber_the_run_banner(self):
+        """DAN-485 x DAN-486 x DAN-660: a crash that happened mid-pause
+        restores two true things at once - the crash recovery and the
+        still-active pause. They used to fight over the same status-bar
+        line (that collision is why _session_restore_status exists at
+        all - commit 31478d5) until DAN-660 gave the crash notice its own
+        channel, the run-banner, instead of joining the status bar at
+        all. So the pause is now free to own the status bar outright,
+        and the crash notice is checked on the banner, not there."""
         from unittest.mock import patch
         from gui.main_window import MainWindow
+        from gui import widgets
         from core.models import ImageEntry
         from core.saucenao import QuotaPauseState
         import datetime
@@ -4776,8 +4779,11 @@ class TestPersistedQuotaPauseShownOnStartup(GuiTestCase):
             win = MainWindow(unclean_shutdown=True)
         try:
             text = win.status_label.text()
-            self.assertIn("Run interrupted", text)
+            self.assertNotIn("Run interrupted", text)
             self.assertIn("12 searched", text)
+            self.assertTrue(win.run_banner.isVisibleTo(win.run_banner.parentWidget()))
+            head = win.run_banner.findChild(widgets.QLabel, "RunBannerHead")
+            self.assertEqual(head.text(), "Run interrupted")
         finally:
             win.close()
             win.deleteLater()
