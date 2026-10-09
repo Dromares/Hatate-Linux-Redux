@@ -15,6 +15,14 @@ the end of that run before anything landed in git. This is a fresh writeup,
 not an edit of a lost one -- the evidence below was re-measured from
 scratch on 2026-10-09, not recovered.
 
+**Correction (DAN-1130).** The `ops/limit-triage.py` half of that is wrong:
+it did exist, as an untracked file in the project workspace's `ops/` (a
+sibling of this repo checkout, so no `git log` here could find it). It had
+bucketed `acpx_session_init_failed` as `other`, which is what DAN-920 cited.
+The two copies have since been merged into this repo's single
+`ops/limit-triage.py`. `ops/PLATFORM-BUG-spawn-e2big.md` itself is still a
+fresh writeup.
+
 ## Mechanism (corrected)
 
 This is **not** an `ARG_MAX` problem. `ARG_MAX` (2 MiB on this host, via
