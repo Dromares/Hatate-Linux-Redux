@@ -7,6 +7,7 @@ read off the palette, because the failure being fixed was exactly a palette
 value that looked fine and painted as an empty black slab.
 """
 import unittest
+from unittest.mock import patch
 
 from PyQt6.QtGui import QFont, QFontInfo
 from PyQt6.QtWidgets import QApplication, QLabel
@@ -22,12 +23,30 @@ MIN_NON_TEXT_CONTRAST = 3.0
 MIN_TEXT_CONTRAST = 4.5
 
 
+class _StripCase(_WindowCase):
+    """Windows built here never restore a session.
+
+    Run after the rest of the suite (this module sorts late), a window
+    restores whatever earlier tests autosaved into the shared default store
+    (`/tmp/send-0.png` and friends), starts a missing-file check against
+    those, and the first event-loop pump delivers its "Missing files"
+    modal - which hangs an offscreen run forever. These tests are about the
+    strip, not about session restore, so they opt out of it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        restore = patch("gui.main_window.MainWindow._restore_saved_session")
+        restore.start()
+        self.addCleanup(restore.stop)
+
+
 def _settle(win):
     for _ in range(3):
         QApplication.processEvents()
 
 
-class TestStripTrackIsVisible(_WindowCase):
+class TestStripTrackIsVisible(_StripCase):
     """R-02: the empty gauge must read as a gauge, not a black slab."""
 
     def _gauge_pixels(self, win):
@@ -76,7 +95,7 @@ class TestStripTrackIsVisible(_WindowCase):
                 self.assertGreaterEqual(_contrast_ratio(track, page), MIN_NON_TEXT_CONTRAST)
 
 
-class TestStripGeometry(_WindowCase):
+class TestStripGeometry(_StripCase):
     def test_gauge_is_a_220px_two_pixel_hairline(self):
         win = self._window("dark")
         _settle(win)
@@ -112,7 +131,7 @@ class TestStripGeometry(_WindowCase):
                     )
 
 
-class TestStripVoice(_WindowCase):
+class TestStripVoice(_StripCase):
     def _running(self, win):
         win._run_active = True
         win.entries[0].sent_to_hydrus = True
@@ -216,7 +235,7 @@ class TestStripVoice(_WindowCase):
         )
 
 
-class TestIdleStrip(_WindowCase):
+class TestIdleStrip(_StripCase):
     """R-05: an idle strip says it is idle. It is never blank."""
 
     def test_empty_window_reads_nothing_queued_eta_dash(self):
