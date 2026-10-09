@@ -837,7 +837,10 @@ def stylesheet(mode):
             background: transparent;
     }}
     QLabel#RunReadout {{ color: {ink_65}; }}
-    QLabel#RunFigure {{ color: {ink_100}; font-weight: 700; }}
+    QLabel#RunFigure {{
+            font-family: {font_mono};
+            color: {ink_100}; font-weight: 700;
+    }}
 
     /* ---- slider ---- */
     QSlider::groove:horizontal {{
