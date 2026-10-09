@@ -111,7 +111,7 @@ class ReviewViewMixin:
 
         header = QHBoxLayout()
         header.setSpacing(10)
-        header.addWidget(widgets.section_label("02 // Compare"))
+        header.addWidget(widgets.section_label("01 // Compare"))
         self.review_view_switch, self.review_view_buttons = widgets.segmented(
             VIEWS, on_change=self._on_review_view_changed, current="pair",
         )
@@ -265,7 +265,7 @@ class ReviewViewMixin:
         self.candidate_combo.currentIndexChanged.connect(self._on_candidate_combo_changed)
         layout.addWidget(self.candidate_combo)
 
-        layout.addWidget(widgets.section_label("03 // Tags"))
+        layout.addWidget(widgets.section_label("02 // Tags"))
         self.tag_list = QListWidget()
         self.tag_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.tag_list.itemChanged.connect(self._on_tag_item_edited)

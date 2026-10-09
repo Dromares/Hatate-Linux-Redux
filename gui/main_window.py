@@ -827,7 +827,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         panel.setObjectName("DropZone")
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(32, 24, 32, 24)
-        self.queue_section_label = widgets.section_label("00 // Queue")
+        self.queue_section_label = widgets.section_label("01 // Queue")
         layout.addWidget(self.queue_section_label, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addStretch(1)
 

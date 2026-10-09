@@ -42,7 +42,7 @@ def _rgb(image, x, y):
 
 
 def _near(a, b, tol=TOLERANCE):
-    return all(abs(p - q) <= tol for p, q in zip(a, b))
+    return all(abs(p - q) <= tol for p, q in zip(a, b, strict=True))
 
 
 def _hairline(mode, over="page"):
@@ -251,9 +251,13 @@ class TestNumberedSectionLabels(_WindowCase):
         win = self._window("dark")
         self.assertEqual(
             self._labels(win.queue_stack.parentWidget()),
-            ["00 // Queue", "01 // Filter"],
+            # R-4 (DAN-1178): numbers run contiguously per page from 01 (the
+            # `00 // RUN` strip is R-01 / P3). The Filter band (populated
+            # Queue) and the Queue label (empty Queue) are never on screen
+            # together, so both are 01.
+            ["01 // Filter", "01 // Queue"],
         )
-        self.assertEqual(self._labels(win.review_page), ["02 // Compare", "03 // Tags"])
+        self.assertEqual(self._labels(win.review_page), ["01 // Compare", "02 // Tags"])
         activity = self._card_of(win.engine_pipeline).parentWidget()
         self.assertEqual(self._labels(activity), ["01 // Engines", "02 // Log"])
 
