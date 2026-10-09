@@ -34,6 +34,7 @@ parents, not identities.
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QFrame, QGridLayout, QHBoxLayout, QLabel, QListWidget, QSizePolicy,
     QSlider, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
@@ -45,6 +46,7 @@ from gui import theme, widgets
 from gui.compare_dialog import (
     WipeView, build_difference_overlay, load_comparison,
 )
+from gui.preview_text import ComparisonReadout
 
 if TYPE_CHECKING:
     from core.config import Settings
@@ -118,26 +120,10 @@ class ReviewViewMixin:
         header.addWidget(self.review_view_switch)
         header.addStretch(1)
 
-        self.review_zoom_widgets = []
-        for glyph, tip, slot in (
-            ("−", "Zoom out (-)", lambda: self.review_wipe.zoom_out()),
-            ("+", "Zoom in (+)", lambda: self.review_wipe.zoom_in()),
-            ("Fit", "Fit the whole image (0, or double-click)",
-             lambda: self.review_wipe.zoom_to_fit()),
-            ("100%", "One image pixel per screen pixel (1) - the view that shows\n"
-                     "compression artefacts and resampling softness as they really are.",
-             lambda: self.review_wipe.zoom_to_actual()),
-        ):
-            button = widgets.icon_button(glyph, tip, slot)
-            self.review_zoom_widgets.append(button)
-            header.addWidget(button)
-
-        self.review_zoom_label = widgets.muted("")
-        self.review_zoom_label.setMinimumWidth(56)
-        self.review_zoom_label.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.review_zoom_widgets.append(self.review_zoom_label)
-        header.addWidget(self.review_zoom_label)
+        # The readout sits between the view switch and the tools, as in
+        # the mockup, so the number a reviewer decides on is the one thing
+        # in the header that is not a control.
+        header.addWidget(self._build_comparison_readout())
 
         header.addWidget(widgets.icon_button(
             "⧉", "Open the comparison in its own window - for a second monitor.",
@@ -153,17 +139,6 @@ class ReviewViewMixin:
         ))
         layout.addLayout(header)
 
-        # Above both views, because it describes the RELATIONSHIP between
-        # the two pictures; under either one it would read as belonging
-        # to that side.
-        self.comparison_banner = QLabel("")
-        self.comparison_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.comparison_banner.setWordWrap(True)
-        self.comparison_banner.setToolTip(
-            "How the selected match compares with your local file."
-        )
-        layout.addWidget(self.comparison_banner)
-
         self.review_stack = QStackedWidget()
         self.review_stack.addWidget(self._build_pair_view())
         self.review_stack.addWidget(self._build_wipe_view())
@@ -178,6 +153,83 @@ class ReviewViewMixin:
 
         self._show_comparison_controls(False)
         return card
+
+    def _build_comparison_readout(self):
+        """`● 96% SIMILARITY ▲ 2.5× larger` (V-01). Replaces the banner row
+        that used to sit above the images - it describes the relationship
+        between the two pictures, which is what the header is for."""
+        self.comparison_readout = QWidget()
+        row = QHBoxLayout(self.comparison_readout)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+        self.readout_glyph = QLabel("")
+        self.readout_glyph.setObjectName("ReadoutGlyph")
+        self.readout_value = QLabel("")
+        self.readout_value.setObjectName("ReadoutValue")
+        self.readout_label = QLabel("")
+        self.readout_label.setObjectName("ReadoutLabel")
+        font = self.readout_label.font()
+        font.setCapitalization(QFont.Capitalization.AllUppercase)
+        self.readout_label.setFont(font)
+        widgets.apply_tracking(self.readout_label)
+        self.readout_diff = QLabel("")
+        self.readout_diff.setObjectName("ReadoutDiff")
+        for part in (self.readout_glyph, self.readout_value,
+                     self.readout_label, self.readout_diff):
+            row.addWidget(part, 0, Qt.AlignmentFlag.AlignBaseline)
+        self.comparison_readout.setToolTip(
+            "How the selected match compares with your local file."
+        )
+        self.set_comparison_readout(ComparisonReadout())
+        return self.comparison_readout
+
+    def set_comparison_readout(self, readout):
+        """Shows `readout`; a part with nothing to say is hidden, and with
+        nothing at all the whole readout is, so no empty gap sits in the
+        header while there is no match."""
+        for label, text in ((self.readout_glyph, readout.glyph),
+                            (self.readout_value, readout.value),
+                            (self.readout_label, readout.label),
+                            (self.readout_diff, readout.diff)):
+            label.setText(text)
+            label.setVisible(bool(text))
+        self.readout_diff.setProperty("tier", readout.tier)
+        style = self.readout_diff.style()
+        style.unpolish(self.readout_diff)
+        style.polish(self.readout_diff)
+        self.comparison_readout.setToolTip(
+            readout.tooltip or "How the selected match compares with your local file."
+        )
+        self.comparison_readout.setVisible(
+            any((readout.glyph, readout.value, readout.label, readout.diff)))
+
+    def _build_zoom_tools(self):
+        """Zoom out / in / Fit / 100% and the current percentage. Floats
+        inside the Wipe/Differences frame, top right (ruling R-3 on
+        DAN-1178) - in the header it would push the readout past the
+        1012px compare column, and showing/hiding it per view would move
+        the images by the toolbar's height."""
+        tools = QFrame()
+        tools.setObjectName("ZoomTools")
+        row = QHBoxLayout(tools)
+        row.setContentsMargins(6, 4, 6, 4)
+        row.setSpacing(4)
+        for glyph, tip, slot in (
+            ("−", "Zoom out (-)", lambda: self.review_wipe.zoom_out()),
+            ("+", "Zoom in (+)", lambda: self.review_wipe.zoom_in()),
+            ("Fit", "Fit the whole image (0, or double-click)",
+             lambda: self.review_wipe.zoom_to_fit()),
+            ("100%", "One image pixel per screen pixel (1) - the view that shows\n"
+                     "compression artefacts and resampling softness as they really are.",
+             lambda: self.review_wipe.zoom_to_actual()),
+        ):
+            row.addWidget(widgets.icon_button(glyph, tip, slot))
+        self.review_zoom_label = widgets.muted("")
+        self.review_zoom_label.setMinimumWidth(56)
+        self.review_zoom_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(self.review_zoom_label)
+        return tools
 
     def _build_pair_view(self):
         """The old preview panel, given the room it never had."""
@@ -235,6 +287,13 @@ class ReviewViewMixin:
         self.review_wipe.zoom_changed.connect(
             lambda percent: self.review_zoom_label.setText(f"{percent:.0f}%"))
         layout.addWidget(self.review_wipe, 1)
+
+        self.review_zoom_tools = self._build_zoom_tools()
+        self.review_zoom_widgets = [self.review_zoom_tools]
+        overlay = QVBoxLayout(self.review_wipe)
+        overlay.setContentsMargins(8, 8, 8, 8)
+        overlay.addWidget(self.review_zoom_tools, 0,
+                          Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
 
         self.review_note = widgets.hint("")
         self.review_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
