@@ -50,7 +50,9 @@ from core.saucenao import (
     clear_quota_pause, describe_quota, describe_quota_pause, describe_short_window,
     get_last_quota, get_quota_pause_state, reset_daily_limit_flag,
 )
-from core.session import clear_session, load_session, save_session, session_entry_count
+from core.session import (
+    clear_session, has_saved_session, load_session, save_session, session_entry_count,
+)
 from core.similarity_display import similarity_label
 from core.sites import ALL_SITE_OPTIONS
 from core.viewport import entries_needing_thumbnails, visible_range_with_buffer
@@ -713,6 +715,17 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         card_layout.setContentsMargins(14, 12, 14, 12)
         card_layout.addWidget(widgets.screen_title("Queue."))
 
+        # Hidden until _restore_saved_session finds an unclean-shutdown
+        # restore with something in it (DAN-660) - built here, not there,
+        # because the Queue page itself doesn't exist yet at that point.
+        self.run_banner, banner_parts = widgets.run_banner()
+        self.run_banner.setVisible(False)
+        self._run_banner_body = banner_parts['body']
+        banner_parts['resume_button'].clicked.connect(self.action_start_search)
+        banner_parts['crash_log_button'].clicked.connect(self._open_crash_log)
+        banner_parts['discard_label'].clicked.connect(self.action_clear_session)
+        card_layout.addWidget(self.run_banner)
+
         # The model is built before anything that reads it - the filter
         # bar sets its initial state from the model's counts, so it has to
         # exist first.
@@ -1238,8 +1251,16 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         Thumbnails are not persisted (binary, and they would dominate the
         file size) so they regenerate in the background, which does not
         block anything."""
+        # Taken before load_session(), which doesn't say WHY it came back
+        # empty - this is what tells "never saved anything" apart from
+        # "a session exists but is empty/corrupt/unreadable" (DAN-487).
+        had_session_file = has_saved_session()
         entries = load_session()
         if not entries:
+            if had_session_file and self._unclean_shutdown:
+                self.status_label.setText(
+                    "Run interrupted — nothing survived from the last session"
+                )
             return
         if session_db.SESSION_DB.exists():
             # Taken before anything touches the entries: whatever changes
@@ -1250,14 +1271,19 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         self.entries.extend(entries)
         self._refresh_table()
         if self._unclean_shutdown:
-            self._session_restore_status = (
-                f"Run interrupted — restored {len(entries)} image(s) from an unclean shutdown"
-            )
+            # The banner (DAN-660) replaces this status-bar line rather
+            # than joining it - two notices for the same event is noise,
+            # and this is the exact pair that collided once already
+            # (commit 31478d5). _session_restore_status stays unset, so
+            # _show_persisted_quota_pause (right after, in __init__)
+            # shows just the quota text on its own if a pause is also
+            # pending, instead of re-joining text the banner now owns.
+            self._show_run_banner(entries)
         else:
             self._session_restore_status = (
                 f"Restored {len(entries)} image(s) from your last session"
             )
-        self.status_label.setText(self._session_restore_status)
+            self.status_label.setText(self._session_restore_status)
         self._start_missing_file_check(entries)
         # Anything that outlived its import poll last run is still showing
         # Queued. Settle it now rather than leaving the Sent column wrong
@@ -1271,6 +1297,21 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
             self._schedule_viewport_thumbnails("session restored")
         else:
             self._start_thumbnail_generation(entries)
+
+    def _show_run_banner(self, entries: List[ImageEntry]):
+        """Populates and shows the Queue page's crash-recovery banner
+        (DAN-660) for an unclean-shutdown restore that brought something
+        back. Per-category counts read the same per-row status the table
+        already tracks - no new counting logic, matching
+        _refresh_sent_count_label's own sent/queued split plus the
+        unsearched count action_start_search already computes."""
+        sent = sum(1 for e in entries if e.sent_to_hydrus and e.hydrus_import_confirmed)
+        queued = sum(1 for e in entries if e.sent_to_hydrus and not e.hydrus_import_confirmed)
+        unsearched = sum(1 for e in entries if e.status == MatchStatus.NOT_SEARCHED)
+        self._run_banner_body.setText(
+            f"{sent} sent, {queued} still queued, {unsearched} not yet searched"
+        )
+        self.run_banner.setVisible(True)
 
     def action_reconcile_with_hydrus(self):
         """Files > Re-check Queued Imports, on request."""
@@ -1972,6 +2013,12 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
 
     def action_view_logs(self):
         self._run_dialog(LogViewerDialog(self))
+
+    def _open_crash_log(self):
+        """The run-banner's "View Crash Log" action - opens the same
+        dialog as action_view_logs, pre-switched to the crash log so the
+        user doesn't have to click the in-dialog toggle a second time."""
+        self._run_dialog(LogViewerDialog(self, show_crash_log=True))
 
     def _update_clear_cache_action_label(self):
         from core.search_cache import get_cache_size_bytes

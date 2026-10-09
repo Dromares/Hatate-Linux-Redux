@@ -8,7 +8,7 @@ The point of the file is that a card looks like a card everywhere without
 anyone having to remember 18/16/18/16. Anything that decides a measurement
 belongs here rather than in a view.
 """
-from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QPixmap
 from PyQt6.QtWidgets import (
     QButtonGroup, QComboBox, QFrame, QHBoxLayout,
@@ -49,6 +49,58 @@ def card(title=None):
         heading.setObjectName('Heading')
         layout.addWidget(heading)
     return frame, layout
+
+
+def run_banner():
+    """The crash-recovery notice (DAN-660): a `card()`-shaped frame with a
+    status glyph, a headline, a per-category body line, and three actions.
+
+    Returns the frame plus its content widgets, since the banner holds no
+    state of its own - the caller (MainWindow, which knows the restored
+    entries) fills in the body text and wires the actions to its own
+    existing behaviour.
+    """
+    frame = QFrame()
+    frame.setObjectName('RunBanner')
+    layout = QHBoxLayout(frame)
+    layout.setContentsMargins(*CARD_MARGINS)
+    layout.setSpacing(CARD_SPACING)
+
+    glyph = QLabel(theme.status_glyph('poor'))
+    glyph.setObjectName('RunBannerGlyph')
+    layout.addWidget(glyph)
+
+    text_col = QVBoxLayout()
+    text_col.setSpacing(2)
+    head = QLabel("Run interrupted")
+    head.setObjectName('RunBannerHead')
+    text_col.addWidget(head)
+    body = QLabel()
+    body.setObjectName('RunBannerBody')
+    body.setWordWrap(True)
+    text_col.addWidget(body)
+    layout.addLayout(text_col, 1)
+
+    resume_button = pill_button("Resume Queue", primary=True)
+    layout.addWidget(resume_button)
+
+    crash_log_button = pill_button("View Crash Log")
+    layout.addWidget(crash_log_button)
+
+    # Deliberately the quietest element on the banner, not a stamped
+    # button - error-cost asymmetry: a wrong delete costs more than a
+    # wrong tag, so "Discard" never gets primary-button weight.
+    discard_label = LinkLabel("Discard &amp; start fresh")
+    discard_label.setObjectName('RunBannerDiscard')
+    layout.addWidget(discard_label)
+
+    return frame, {
+        'head': head,
+        'body': body,
+        'resume_button': resume_button,
+        'crash_log_button': crash_log_button,
+        'discard_label': discard_label,
+    }
 
 
 def restyle(widget, name):
@@ -249,6 +301,22 @@ def apply_theme(root, mode):
     app = QApplication.instance()
     if app is not None:
         app.setStyleSheet(theme.stylesheet(mode))
+
+
+class LinkLabel(QLabel):
+    """Plain underlined text that acts like a link - no border, no fill,
+    none of a QPushButton's visual weight. For an action that should read
+    as the quietest thing on screen (see run_banner's "Discard" use)."""
+
+    clicked = pyqtSignal()
+
+    def __init__(self, text=''):
+        super().__init__(f"<u>{text}</u>")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
 
 
 class WideComboBox(QComboBox):

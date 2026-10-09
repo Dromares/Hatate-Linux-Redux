@@ -64,6 +64,18 @@ class TestCrashLogToggle(unittest.TestCase):
         self.assertFalse(self.dialog._showing_crash_log)
         self.assertEqual(self.dialog.crash_log_btn.text(), "View Crash Log")
 
+    def test_show_crash_log_opens_preswitched(self):
+        """DAN-660: the run-banner's "View Crash Log" action opens this
+        dialog already on the crash log, instead of making the user click
+        the in-dialog toggle a second time."""
+        from gui.log_viewer_dialog import LogViewerDialog
+        self.fault_file.write_text("segfault during search worker teardown\n", encoding="utf-8")
+        dialog = LogViewerDialog(show_crash_log=True)
+        self.addCleanup(dialog.deleteLater)
+        self.assertTrue(dialog._showing_crash_log)
+        self.assertEqual(dialog.crash_log_btn.text(), "View App Log")
+        self.assertIn("segfault", dialog.text.toPlainText())
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
