@@ -16,7 +16,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from tests import _path  # noqa: F401  (puts the project root on sys.path)
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFontMetrics, QImage
 from PyQt6.QtWidgets import QApplication
 
