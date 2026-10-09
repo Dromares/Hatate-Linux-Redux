@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+
 from PyQt6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
@@ -7,23 +10,167 @@ from PyQt6.QtWidgets import (
     QKeySequenceEdit, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem,
     QMessageBox, QTabWidget, QVBoxLayout, QWidget,
 )
-from PyQt6.QtGui import QKeySequence
-from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QDesktopServices, QKeySequence
+from PyQt6.QtCore import Qt, QTimer, QUrl
 
 from core.applog import get_logger
 from core.config import Settings
 from core.engines import ALL_ENGINES, label_for as engine_label, pipeline_summary
-from core import lens_browser, shortcuts as shortcut_registry, sidecar
+from core import lens_browser, mcp_audit, shortcuts as shortcut_registry, sidecar
 from core.hydrus_client import HydrusClient, HydrusError
+from core.mcp_server import HOST as MCP_HOST
 from core.provenance_note import DEFAULT_NOTE_NAME
 from gui import message, settings_search, theme, widgets
 
 log = get_logger("gui.settings")
 
+# mcp-settings-spec.md §7: tier id -> the column label shown in the
+# Recent-tool-calls table and in a refused call's Outcome cell. Not the
+# same strings as core/mcp_tools.py's own §8 refusal_message() template -
+# that one picks "is"/"are" per tier for a grammatical sentence; this one
+# is a fixed table column, spec'd as "Refused — {tier label} is off"
+# unconditionally.
+_MCP_TIER_LABELS = {
+    "read": "Read",
+    "local_write": "Reversible",
+    "research": "Re-search",
+    "hydrus_write": "Hydrus writes",
+    "destructive": "Destructive",
+}
+
+# How many of the MCP audit log's most recent entries the table shows -
+# mcp-settings-spec.md §7's "cap at 200 displayed rows".
+_MCP_AUDIT_DISPLAY_LIMIT = 200
+
 
 def _nonblank_lines(edit: QPlainTextEdit) -> list[str]:
     """The box's lines, trimmed, with blanks dropped."""
     return [line.strip() for line in edit.toPlainText().splitlines() if line.strip()]
+
+
+def _read_mcp_audit_entries(path) -> list[dict]:
+    """Every parseable line of the MCP audit log, oldest first.
+
+    Never raises: a missing file means no calls yet, and a line that
+    fails to parse - most likely the log's own last line, still
+    mid-write by the server's background thread when this reads it - is
+    silently dropped rather than aborting the whole read (mcp-settings-
+    spec.md's "must not fall over on a partially-written final line").
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    entries = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return entries
+
+
+def _mcp_time_cell(timestamp: str) -> str:
+    """mcp-settings-spec.md §7: HH:MM:SS if today, else "MMM D, HH:MM:SS".
+    The audit log's own timestamps (core/mcp_audit.py's _iso_now) are UTC;
+    shown as recorded rather than converted, so this always matches what
+    is actually on disk."""
+    try:
+        when = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return timestamp
+    if when.date() == datetime.now(timezone.utc).date():
+        return when.strftime("%H:%M:%S")
+    return when.strftime("%b %-d, %H:%M:%S")
+
+
+def _mcp_target_cell(entry: dict) -> str:
+    row = entry.get("row")
+    candidate_index = entry.get("candidate_index")
+    if row is None:
+        return "—"
+    if candidate_index is None:
+        return f"#{row}"
+    return f"#{row} → candidate {candidate_index}"
+
+
+def _mcp_outcome_weight(entry: dict) -> str:
+    """The ink-ramp tier for one audit entry's Outcome cell - split out
+    from _mcp_outcome_cell() below, with only literal `return`s, so the
+    gui/theme.py call site that colors the cell is a direct,
+    statically-resolvable function call. tests/test_theme.py's
+    discover_ink_color_tiers() walks every ink_color() call site at scan
+    time and refuses to guess at a dynamic tier - see its docstring."""
+    if not entry.get("allowed") or entry.get("dry_run"):
+        return "ink_100"
+    tool = entry.get("tool", "")
+    outcome = entry.get("outcome") or {}
+    if tool in ("send_upload", "send_url", "download_send"):
+        if outcome.get("success"):
+            return "ink_65"
+        return "ink_100" if (outcome.get("error") or outcome.get("skipped_reason")) else "ink_65"
+    if tool == "research":
+        if outcome.get("research_started") and outcome.get("completed"):
+            return "ink_65"
+        return "ink_100"
+    if "error" in outcome:
+        return "ink_100"
+    return "ink_65"
+
+
+def _mcp_outcome_cell(entry: dict) -> tuple[str, str]:
+    """(cell text, ink-ramp tier) for one audit entry's Outcome column,
+    per mcp-settings-spec.md §7's table."""
+    tool = entry.get("tool", "")
+    outcome = entry.get("outcome") or {}
+    weight = _mcp_outcome_weight(entry)
+
+    if not entry.get("allowed"):
+        tier = entry.get("tier", "")
+        tier_label = _MCP_TIER_LABELS.get(tier, tier)
+        return f"Refused — {tier_label} is off", weight
+    if entry.get("dry_run"):
+        return "Recorded, not run — dry run is on", weight
+
+    if tool in ("send_upload", "send_url", "download_send"):
+        if outcome.get("success"):
+            return f"Allowed — sent  {theme.STATUS_GLYPHS['sent']}", weight
+        error = outcome.get("error") or outcome.get("skipped_reason")
+        return (f"Error — {error}", weight) if error else ("Allowed", weight)
+    if tool == "select_candidate":
+        return f"Allowed — picked candidate {outcome.get('selected_candidate_index')}", weight
+    if tool == "toggle_reviewed":
+        word = "reviewed" if outcome.get("reviewed") else "unreviewed"
+        return f"Allowed — marked {word}", weight
+    if tool == "research":
+        if outcome.get("research_started") and outcome.get("completed"):
+            # The audit entry only records the final state, not a
+            # before/after diff, so "new candidates" is approximated as
+            # the total candidate count across the re-searched rows.
+            count = sum(r.get("candidate_count", 0) for r in outcome.get("results") or [])
+            return f"Allowed — re-searched, {count} new candidates", weight
+        return f"Error — {outcome.get('reason', 'research did not complete')}", weight
+    if tool == "remove_row":
+        return "Allowed — row removed", weight
+    if tool == "reset_result":
+        return "Allowed — result reset", weight
+    if "error" in outcome:
+        return f"Error — {outcome['error']}", weight
+    return "Allowed", weight
+
+
+def _mcp_outcome_tooltip(entry: dict) -> str:
+    """The full literal string the tool actually returned, per §7: short
+    form in the cell, the whole thing on hover."""
+    if not entry.get("allowed"):
+        return entry.get("reason") or ""
+    outcome = entry.get("outcome") or {}
+    if entry.get("dry_run") and outcome.get("note"):
+        return outcome["note"]
+    return json.dumps(outcome, default=str)
 
 
 class SettingsDialog(QDialog):
@@ -33,6 +180,13 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(480)
         self.settings = settings
         self._mode = theme.resolve_mode(settings.theme)
+        # The MCP tab's Connection card needs a handle to the actually
+        # running server (owned by MainWindow, not by this dialog) to
+        # show live state and offer a real "Restart server" button - see
+        # mcp-settings-spec.md §10 risk 1. `parent` is None in most tests
+        # and in the harness construction below, which this tab treats as
+        # "no live server to report on" rather than raising.
+        self._mcp_main_window = parent
 
         # Wide enough for the widest row this dialog has - General's
         # "min [ ] max (seconds) [ ]" delay row - without it squeezing
@@ -50,10 +204,18 @@ class SettingsDialog(QDialog):
             (self._build_tag_namespaces_tab, "Tag Namespaces"),
             (self._build_site_logins_tab, "Site Logins"),
             (self._build_shortcuts_tab, "Shortcuts"),
+            (self._build_mcp_tab, "MCP"),
         ):
             page = builder()
             self._pages.append((name, page))
             self.tabs.addTab(self._scrollable(page), name)
+
+        # The audit table only tails while the MCP tab is the one actually
+        # on screen - mcp-settings-spec.md §10 risk 3, the same lifecycle
+        # discipline as ActivityViewMixin's own tab/page-visibility timer.
+        self._mcp_tab_index = next(
+            i for i, (name, _page) in enumerate(self._pages) if name == "MCP")
+        self.tabs.currentChanged.connect(self._on_tabs_current_changed)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -2040,6 +2202,442 @@ class SettingsDialog(QDialog):
         )
         return clashes
 
+    # -- MCP -------------------------------------------------------------
+    def _build_mcp_tab(self) -> QWidget:
+        """The embedded MCP server - mcp-settings-spec.md (DAN-706) is the
+        accepted authority for every string and grouping below; follow it
+        exactly rather than inventing wording."""
+        mcp = self.settings.mcp
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        intro = widgets.muted(
+            "Lets a connected AI read the queue, see the pictures, and record "
+            "decisions while you're away. Off by default."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        self.mcp_enabled = QCheckBox("Enable the MCP server")
+        self.mcp_enabled.setChecked(mcp.enabled)
+        # Connected AFTER setChecked, so restoring a saved enabled=True
+        # state from the loaded Settings never fires this - only a real
+        # user click does. See §5a / §10 risk 5: the one-time summary
+        # must never fire on construction, only on an actual flip.
+        self.mcp_enabled.toggled.connect(self._on_mcp_enabled_toggled)
+        layout.addWidget(self.mcp_enabled)
+
+        layout.addWidget(self._build_mcp_connection_card())
+
+        form = QFormLayout()
+        self.mcp_port = QSpinBox()
+        self.mcp_port.setRange(1024, 65535)
+        self.mcp_port.setValue(mcp.port)
+        self.mcp_port.valueChanged.connect(self._refresh_mcp_connection)
+        form.addRow("Port:", self.mcp_port)
+        form.addRow("", widgets.hint(
+            "Loopback only (127.0.0.1) — never reachable from another machine on "
+            "your network."))
+
+        self.mcp_token = QLineEdit(mcp.token)
+        self.mcp_token.setEchoMode(QLineEdit.EchoMode.Password)
+        token_row = QHBoxLayout()
+        token_row.addWidget(self.mcp_token)
+        token_row.addWidget(widgets.icon_button(
+            "⧉", "Copy token to clipboard", self._copy_mcp_token))
+        token_row.addWidget(widgets.pill_button("Generate new token", self._generate_mcp_token))
+        form.addRow("Token:", token_row)
+        self.mcp_token_hint = widgets.hint("")
+        self.mcp_token.textEdited.connect(lambda _text: self.mcp_token_hint.setText(""))
+        form.addRow("", self.mcp_token_hint)
+        layout.addLayout(form)
+
+        self.mcp_dry_run = QCheckBox("Dry run — practice mode")
+        self.mcp_dry_run.setChecked(mcp.dry_run)
+        self.mcp_dry_run.toggled.connect(self._refresh_mcp_dry_run_hint)
+        layout.addWidget(self.mcp_dry_run)
+        self.mcp_dry_run_hint = widgets.hint("")
+        layout.addWidget(self.mcp_dry_run_hint)
+        self._refresh_mcp_dry_run_hint()
+
+        layout.addWidget(self._build_mcp_always_available_group())
+        self.mcp_allow_hydrus_writes = self._build_mcp_tier_checkbox_group(
+            layout,
+            box_title="On by default — sends to your live Hydrus",
+            label="Let it send files and tags to Hydrus",
+            checked=mcp.allow_hydrus_writes,
+            hint_text=(
+                "This is on, because you asked for it. Every send lands as a row "
+                "below in Recent tool calls — check there for exactly what went "
+                "out and when. Turn this off here to stop it."),
+            dangerous=False,
+            live_marker=True,
+        )
+        self.mcp_allow_research = self._build_mcp_tier_checkbox_group(
+            layout,
+            box_title="Off by default — spends a limited allowance",
+            label="Let it re-search a stuck entry",
+            checked=mcp.allow_research,
+            hint_text=(
+                "Spends the same daily allowance a manual re-search would — "
+                "SauceNAO's is capped per day. Leave this off to keep that "
+                "allowance for your own searching."),
+            dangerous=False,
+        )
+        self.mcp_allow_destructive = self._build_mcp_tier_checkbox_group(
+            layout,
+            box_title="Off by default — hard to undo by hand",
+            label="Let it remove rows and reset results",
+            checked=mcp.allow_destructive,
+            hint_text=(
+                "Throws away work this app already did. There's no confirmation "
+                "prompt from the AI side — only this switch."),
+            dangerous=True,
+        )
+
+        layout.addWidget(self._build_mcp_audit_card())
+        layout.addStretch(1)
+
+        self._refresh_mcp_connection()
+        return widget
+
+    def _build_mcp_connection_card(self) -> QWidget:
+        card, layout = widgets.card("Connection")
+
+        self.mcp_connection_primary = QLabel("")
+        layout.addWidget(self.mcp_connection_primary)
+        self.mcp_connection_remedy = widgets.hint("")
+        layout.addWidget(self.mcp_connection_remedy)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        self.mcp_open_log_btn = widgets.pill_button(
+            "Open the log", lambda: self._mcp_main_window.action_view_logs())
+        buttons.addWidget(self.mcp_open_log_btn)
+        self.mcp_restart_btn = widgets.pill_button(
+            "Restart server", self._mcp_restart_server)
+        buttons.addWidget(self.mcp_restart_btn)
+        layout.addLayout(buttons)
+        return card
+
+    def _build_mcp_always_available_group(self) -> QGroupBox:
+        box = QGroupBox("Always available when MCP is on")
+        layout = QVBoxLayout(box)
+        for text in (
+            "Read everything — the queue, each entry, candidates, scores, "
+            "upscale verdicts, tags, the images themselves, and the diff "
+            "between two candidates.",
+            "Make reversible local decisions — pick a candidate, mark an entry "
+            "reviewed. Undo by opening the entry again and choosing differently.",
+        ):
+            label = QLabel(text)
+            label.setWordWrap(True)
+            layout.addWidget(label)
+        return box
+
+    def _build_mcp_tier_checkbox_group(
+        self, parent_layout, *, box_title, label, checked, hint_text, dangerous,
+        live_marker=False,
+    ) -> QCheckBox:
+        """One of §5's tier QGroupBoxes: a checkbox, optionally the `●`
+        live marker next to it, and a one-line consequence hint at the
+        given ink weight. Returns the checkbox so apply_to_settings() can
+        read it back."""
+        box = QGroupBox(box_title)
+        box_layout = QVBoxLayout(box)
+
+        row = QHBoxLayout()
+        checkbox = QCheckBox(label)
+        checkbox.setChecked(checked)
+        row.addWidget(checkbox)
+        if live_marker:
+            # A one-character QLabel on purpose - see mcp-settings-spec.md
+            # §9: it is deliberately NOT a useful search term, so its text
+            # is exactly the glyph and nothing else. STATUS_GLYPHS['sent']
+            # is the same "confirmed positive, this happened for real"
+            # glyph the audit table's own Outcome column reuses below.
+            marker = QLabel(theme.STATUS_GLYPHS['sent'])
+            marker.setToolTip("Live - this permission is already on.")
+            marker.setStyleSheet(
+                f"color: {theme.ink_color(self._mode, 'ink_65').name()};")
+            row.addWidget(marker)
+        row.addStretch(1)
+        box_layout.addLayout(row)
+
+        hint = widgets.hint(hint_text)
+        # The two branches are both literals, resolved inline rather than
+        # through a passed-in tier string - see _mcp_outcome_weight()'s
+        # docstring on why tests/test_theme.py needs this shape.
+        hint.setStyleSheet(
+            f"color: {theme.ink_color(self._mode, 'ink_100' if dangerous else 'ink_65').name()};")
+        box_layout.addWidget(hint)
+
+        parent_layout.addWidget(box)
+        return checkbox
+
+    def _copy_mcp_token(self) -> None:
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(self.mcp_token.text())
+
+    def _generate_mcp_token(self):
+        import secrets
+        value = secrets.token_urlsafe(32)
+        self.mcp_token.setText(value)
+        QApplication.clipboard().setText(value)
+        self.mcp_token_hint.setText("New token generated and copied to clipboard.")
+
+    def _refresh_mcp_dry_run_hint(self):
+        on = self.mcp_dry_run.isChecked()
+        self.mcp_dry_run_hint.setStyleSheet(
+            f"color: {theme.ink_color(self._mode, 'ink_65' if on else 'ink_100').name()};")
+        self.mcp_dry_run_hint.setText(
+            "Dry run is on. The AI can look at everything and tell you what it "
+            "would pick, but every action — picking a candidate, marking "
+            "reviewed, re-searching, sending to Hydrus, removing a row — is "
+            "logged as recorded-not-run and never actually happens."
+            if on else
+            "Dry run is off. Allowed actions happen for real, including "
+            "anything enabled above."
+        )
+
+    def _on_mcp_enabled_toggled(self, checked: bool):
+        self._refresh_mcp_connection()
+        if checked:
+            self._show_mcp_enable_summary()
+
+    def _show_mcp_enable_summary(self):
+        """mcp-settings-spec.md §5a: fires once per unchecked→checked
+        edge of the server checkbox, listing exactly the tiers currently
+        ticked in this dialog - not the saved settings, since the user
+        may have just changed one and not applied yet."""
+        lines = [
+            "Starting now, a connected AI with the token below can:",
+            "",
+            " •  Read everything — the queue, entries, candidates, scores, tags,",
+            "    the images themselves, and diffs.",
+            " •  Pick a candidate and mark entries reviewed. Undo by opening the",
+            "    entry again.",
+        ]
+        if self.mcp_allow_hydrus_writes.isChecked():
+            lines.append(" •  Send files and tags to your live Hydrus library — on by default.")
+        if self.mcp_allow_research.isChecked():
+            lines.append(" •  Re-search a stuck entry, spending your SauceNAO allowance.")
+        if self.mcp_allow_destructive.isChecked():
+            lines.append(" •  Remove rows and reset results, with no confirmation on its side.")
+        lines.append("")
+        lines.append("Recent tool calls below records exactly what it does. Turn any of")
+        lines.append("this off in the groups above, any time.")
+
+        box = message.build(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("Enabling the MCP server")
+        box.setText("\n".join(lines))
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        ok_button = box.button(QMessageBox.StandardButton.Ok)
+        if ok_button is not None:
+            # "OK" reads as dismissing an error; this is acknowledging a fact.
+            ok_button.setText("Got it")
+        try:
+            box.exec()
+        finally:
+            box.deleteLater()
+
+    def _mcp_server_handle(self):
+        return getattr(self._mcp_main_window, "_mcp_server", None)
+
+    def _mcp_restart_server(self):
+        """Re-binds the live server with whatever port/token/enabled is
+        currently TYPED, not the saved settings - mirrors the Hydrus tab's
+        "Test connection" button, just with a real side effect instead of
+        a read-only probe (mcp-settings-spec.md §3's note on this button)."""
+        from dataclasses import replace
+
+        server = self._mcp_server_handle()
+        if server is None:
+            return
+        temp = replace(
+            self.settings.mcp,
+            enabled=True, port=self.mcp_port.value(), token=self.mcp_token.text(),
+        )
+        server.restart(temp)
+        self._refresh_mcp_connection()
+
+    def _refresh_mcp_connection(self):
+        """Redraws the Connection card from the actually-running server,
+        per mcp-settings-spec.md §3's six states."""
+        server = self._mcp_server_handle()
+        port = self.mcp_port.value()
+        enabled = self.mcp_enabled.isChecked()
+
+        if not enabled:
+            state, err = 1, None
+        elif server is not None and server.running:
+            state, err = 2, None
+        else:
+            err = (server.last_error if server is not None else None) or ""
+            lowered = err.lower()
+            if "pip install mcp" in lowered or "not installed" in lowered:
+                state = 3
+            elif "blank bearer token" in lowered:
+                state = 4
+            elif "in use" in lowered:
+                state = 5
+            elif err:
+                state = 6
+            else:
+                # Enabled, but nothing has actually attempted a bind from
+                # here yet (e.g. no main-window handle at all, as in a
+                # headless construction) - nothing to report beyond "not
+                # running".
+                state = 1
+
+        primary, remedy = {
+            1: ("Stopped.",
+                'Turn on "Enable the MCP server" above to let a connected AI read '
+                'the queue — and, once you choose, act on it.'),
+            2: (f"Listening on {MCP_HOST}:{port}.",
+                "A client with the token below can connect now."),
+            3: ("Can't start — the mcp package isn't installed.",
+                "Install it: venv/bin/pip install mcp, then restart Hatate. "
+                "(It's optional, so this app never installs it for you.)"),
+            4: ("Can't start — no token is set.",
+                'Generate one below, then click "Restart server."'),
+            5: (f"Can't start — port {port} is already in use.",
+                "Something else on this machine is using that port — maybe "
+                'another copy of Hatate. Pick a different port below and click '
+                '"Restart server."'),
+            6: (err or "Couldn't start.", ""),
+        }[state]
+        # States 1-2 are healthy/inactive-by-choice (ink_65); 3-6 need the
+        # user to act (ink_100) - same ink-ramp convention STATUS_WEIGHTS
+        # already uses. Inlined as a literal IfExp (rather than a variable
+        # threaded from the dict above) so tests/test_theme.py's
+        # discover_ink_color_tiers() can resolve it statically.
+        healthy = state in (1, 2)
+
+        self.mcp_connection_primary.setText(primary)
+        self.mcp_connection_primary.setStyleSheet(
+            f"color: {theme.ink_color(self._mode, 'ink_65' if healthy else 'ink_100').name()};")
+        self.mcp_connection_remedy.setText(remedy)
+        self.mcp_connection_remedy.setVisible(bool(remedy))
+        self.mcp_restart_btn.setVisible(enabled)
+        self.mcp_open_log_btn.setVisible(state == 6)
+
+    # -- MCP: recent tool calls ------------------------------------------
+    def _build_mcp_audit_card(self) -> QWidget:
+        card, layout = widgets.card()
+
+        header = QHBoxLayout()
+        header.addWidget(widgets.heading("Recent tool calls"))
+        header.addStretch(1)
+        self.mcp_audit_filter_row, self.mcp_audit_filter_buttons = widgets.segmented(
+            [("actions", "Actions"), ("all", "All calls")],
+            on_change=self._on_mcp_audit_filter_changed, current="actions",
+        )
+        header.addWidget(self.mcp_audit_filter_row)
+        layout.addLayout(header)
+
+        controls = QHBoxLayout()
+        self.mcp_audit_follow_btn = widgets.icon_button(
+            "⟳", "Keep this up to date while the tab is open.",
+            self._on_mcp_audit_follow_toggled, checkable=True)
+        self.mcp_audit_follow_btn.setChecked(True)
+        controls.addWidget(self.mcp_audit_follow_btn)
+        controls.addWidget(widgets.icon_button(
+            "↗", "Open the folder the audit log is in.", self._open_mcp_audit_folder))
+        controls.addStretch(1)
+        controls.addWidget(QLabel("Keep up to"))
+        self.mcp_audit_max_mb = QSpinBox()
+        self.mcp_audit_max_mb.setRange(1, 500)
+        self.mcp_audit_max_mb.setValue(
+            max(1, self.settings.mcp.audit_log_max_bytes // 1_000_000))
+        controls.addWidget(self.mcp_audit_max_mb)
+        controls.addWidget(QLabel("MB before trimming the oldest entries."))
+        layout.addLayout(controls)
+
+        self.mcp_audit_table = QTableWidget(0, 5)
+        self.mcp_audit_table.setHorizontalHeaderLabels(
+            ["Time", "Tool", "Tier", "Target", "Outcome"])
+        self.mcp_audit_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.mcp_audit_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        row_header = self.mcp_audit_table.verticalHeader()
+        if row_header is not None:
+            row_header.setVisible(False)
+        header_view = self.mcp_audit_table.horizontalHeader()
+        if header_view is not None:
+            for column in (0, 1, 2, 3):
+                header_view.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+            header_view.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        self.mcp_audit_table.setMinimumHeight(220)
+        layout.addWidget(self.mcp_audit_table)
+
+        self.mcp_audit_shown_caption = widgets.muted("")
+        layout.addWidget(self.mcp_audit_shown_caption)
+        layout.addWidget(widgets.muted(f"Writing to {mcp_audit.AUDIT_LOG_FILE}"))
+
+        self._mcp_audit_timer = QTimer(self)
+        self._mcp_audit_timer.setInterval(2000)
+        self._mcp_audit_timer.timeout.connect(self._refresh_mcp_audit_table)
+        self._refresh_mcp_audit_table()
+        return card
+
+    def _on_mcp_audit_filter_changed(self, _key):
+        self._refresh_mcp_audit_table()
+
+    def _on_mcp_audit_follow_toggled(self):
+        if self.mcp_audit_follow_btn.isChecked():
+            self._refresh_mcp_audit_table()
+            if self.tabs.currentIndex() == self._mcp_tab_index:
+                self._mcp_audit_timer.start()
+        else:
+            self._mcp_audit_timer.stop()
+
+    def _open_mcp_audit_folder(self):
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(mcp_audit.AUDIT_LOG_FILE.parent)))
+
+    def _on_tabs_current_changed(self, index: int):
+        timer = getattr(self, "_mcp_audit_timer", None)
+        if timer is None:
+            return
+        if index == self._mcp_tab_index:
+            self._refresh_mcp_connection()
+            self._refresh_mcp_audit_table()
+            if self.mcp_audit_follow_btn.isChecked():
+                timer.start()
+        else:
+            timer.stop()
+
+    def _refresh_mcp_audit_table(self):
+        entries = _read_mcp_audit_entries(mcp_audit.AUDIT_LOG_FILE)
+        if self.mcp_audit_filter_buttons["actions"].isChecked():
+            entries = [e for e in entries if e.get("tier") != "read"]
+        total = len(entries)
+        shown = list(reversed(entries[-_MCP_AUDIT_DISPLAY_LIMIT:]))
+
+        table = self.mcp_audit_table
+        table.setRowCount(len(shown))
+        for row, entry in enumerate(shown):
+            table.setItem(row, 0, QTableWidgetItem(_mcp_time_cell(entry.get("timestamp", ""))))
+            table.item(row, 0).setFont(theme.mono_font())
+            table.setItem(row, 1, QTableWidgetItem(str(entry.get("tool", ""))))
+            table.item(row, 1).setFont(theme.mono_font())
+            tier = entry.get("tier", "")
+            tier_label = _MCP_TIER_LABELS.get(tier, tier)
+            table.setItem(row, 2, QTableWidgetItem(tier_label))
+            table.setItem(row, 3, QTableWidgetItem(_mcp_target_cell(entry)))
+
+            text, _ = _mcp_outcome_cell(entry)
+            outcome_item = QTableWidgetItem(text)
+            outcome_item.setToolTip(_mcp_outcome_tooltip(entry))
+            outcome_item.setForeground(theme.ink_color(self._mode, _mcp_outcome_weight(entry)))
+            table.setItem(row, 4, outcome_item)
+
+        caption = (
+            f"Showing the most recent {len(shown)} of {total} calls."
+            if total > len(shown) else "")
+        self.mcp_audit_shown_caption.setText(caption)
+
     def accept(self):
         """Refuses to close on a shortcut conflict.
 
@@ -2204,6 +2802,15 @@ class SettingsDialog(QDialog):
         s.set_hydrus_duplicate_relationships = self.set_hydrus_duplicate_relationships.isChecked()
         s.write_hydrus_provenance_note = self.write_hydrus_provenance_note.isChecked()
         s.hydrus_provenance_note_name = self.hydrus_provenance_note_name.text().strip()
+
+        s.mcp.enabled = self.mcp_enabled.isChecked()
+        s.mcp.port = self.mcp_port.value()
+        s.mcp.token = self.mcp_token.text()
+        s.mcp.dry_run = self.mcp_dry_run.isChecked()
+        s.mcp.allow_research = self.mcp_allow_research.isChecked()
+        s.mcp.allow_hydrus_writes = self.mcp_allow_hydrus_writes.isChecked()
+        s.mcp.allow_destructive = self.mcp_allow_destructive.isChecked()
+        s.mcp.audit_log_max_bytes = self.mcp_audit_max_mb.value() * 1_000_000
 
         log.info("Settings updated from Preferences dialog")
         s.save()
