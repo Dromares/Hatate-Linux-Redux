@@ -354,7 +354,8 @@ class TestScrollingStaysCheap(_WindowCase):
             self._scroll(win)
         finally:
             cls.paintEvent = original
-        self.assertLess(max(spent, default=0), 0.002)
+        # 5 ms: measures ~0.03 ms alone, ~3 ms with 8 suites sharing the CPU.
+        self.assertLess(max(spent, default=0), 0.005)
         print(f"\n[brackets] 1000-row scroll: paintEvents={len(spent)} "
               f"total={sum(spent) * 1e3:.2f}ms max={max(spent, default=0) * 1e3:.3f}ms")
 

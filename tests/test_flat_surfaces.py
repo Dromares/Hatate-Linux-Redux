@@ -177,6 +177,11 @@ class TestRegionsAreFlatHairlines(_WindowCase):
             with self.subTest(mode=mode):
                 win = self._window(mode)
                 win.set_mode("review")
+                # The rail's centre sits under the ghost kanji, which is
+                # page + 5% ink - in dark, within a step of a card fill, so
+                # this test would stop being able to tell the two apart.
+                # The ghost is its own layer, pinned in test_ghost_kanji.
+                win.set_ghost("")
                 page = _parse_hex(theme.palette(mode)["page"])
                 img = self._shot(win)
 
