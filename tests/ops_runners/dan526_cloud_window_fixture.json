@@ -1,0 +1,682 @@
+[
+  {
+    "id": "dd043026",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-03T23:55:13.635Z",
+    "invocationSource": "assignment",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "3fcfa32f",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-03T23:56:06.676Z",
+    "invocationSource": "automation",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "c898cd8c",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-03T23:57:06.672Z",
+    "invocationSource": "automation",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "c6a88c88",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T00:40:07.071Z",
+    "invocationSource": "automation",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "f7a458d5",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T00:40:12.872Z",
+    "invocationSource": "automation",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "aeb8fd79",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T00:40:17.844Z",
+    "invocationSource": "automation",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "949e211f",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T00:40:36.970Z",
+    "invocationSource": "automation",
+    "errorCode": "issue_terminal_status",
+    "error": "Cancelled because issue reached terminal status (done) before the queued run could start",
+    "resultJson": null
+  },
+  {
+    "id": "d9aa1e05",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T00:41:07.213Z",
+    "invocationSource": "automation",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "Stand-down is complete and the organization is moving on its..."
+    }
+  },
+  {
+    "id": "0b7b8ee7",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T01:04:45.509Z",
+    "invocationSource": "automation",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "Handled the wake on DAN-308.\n\n**The sweep's ask was already ..."
+    }
+  },
+  {
+    "id": "61bbac17",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T01:07:06.897Z",
+    "invocationSource": "assignment",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "**DAN-166 approved and closed as `done`** on merge commit `7..."
+    }
+  },
+  {
+    "id": "bf08a5eb",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T01:14:32.454Z",
+    "invocationSource": "assignment",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "**DAN-326: approved and `done`.** I woke as approver, verifi..."
+    }
+  },
+  {
+    "id": "44864a92",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T01:18:41.830Z",
+    "invocationSource": "assignment",
+    "errorCode": "issue_reassigned",
+    "error": "Cancelled before issue reassignment",
+    "resultJson": {
+      "summary": "Verified. The live record shows arm 1 is still filing duplic..."
+    }
+  },
+  {
+    "id": "715d9c12",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T01:23:41.544Z",
+    "invocationSource": "assignment",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "**DAN-331 approved and closed.** `status: done`, `executionS..."
+    }
+  },
+  {
+    "id": "2841588a",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T01:32:38.373Z",
+    "invocationSource": "assignment",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "Yes \u2014 and the gap your question caught is now closed.\n\n**Sta..."
+    }
+  },
+  {
+    "id": "8763bdd9",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T01:40:15.349Z",
+    "invocationSource": "assignment",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "**DAN-340 approved and closed** \u2014 `status: done`, `execution..."
+    }
+  },
+  {
+    "id": "62ffedaa",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T01:46:32.203Z",
+    "invocationSource": "automation",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "Yes, it's being worked on \u2014 but I have to correct what I tol..."
+    }
+  },
+  {
+    "id": "11e2dedb",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T01:55:51.789Z",
+    "invocationSource": "assignment",
+    "errorCode": "issue_reassigned",
+    "error": "Cancelled before issue reassignment",
+    "resultJson": {
+      "summary": "Gate verified from a re-read with the stage id quoted. Now t..."
+    }
+  },
+  {
+    "id": "0545c2ff",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T02:03:53.277Z",
+    "invocationSource": "assignment",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "Done. DAN-346 approved and closed.\n\n## What I decided\n\n**App..."
+    }
+  },
+  {
+    "id": "90b70556",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T02:09:54.065Z",
+    "invocationSource": "assignment",
+    "errorCode": "issue_assignee_changed",
+    "error": "Cancelled because issue assignee changed before the queued run could start; the new owner will be woken instead",
+    "resultJson": null
+  },
+  {
+    "id": "89d1cb32",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T02:11:25.679Z",
+    "invocationSource": "assignment",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "**DAN-348 approved and closed as *contained*.** I was the ap..."
+    }
+  },
+  {
+    "id": "f4c3a51c",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T02:24:27.296Z",
+    "invocationSource": "assignment",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "Decided it. **Approved** \u2014 DAN-344 is `done`.\n\n## The call\n\n..."
+    }
+  },
+  {
+    "id": "9fed3f98",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T02:33:06.917Z",
+    "invocationSource": "automation",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "Handled. This wake was a false signal caused by my own bookk..."
+    }
+  },
+  {
+    "id": "3ec6f305",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T02:44:47.811Z",
+    "invocationSource": "assignment",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "DAN-351 is approved and `done`; decision recorded as `approv..."
+    }
+  },
+  {
+    "id": "86b48e3d",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T02:51:29.190Z",
+    "invocationSource": "automation",
+    "errorCode": "provider_quota",
+    "error": "ACP agent reported a terminal limit failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal limit failure."
+    }
+  },
+  {
+    "id": "b273c537",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T03:22:06.493Z",
+    "invocationSource": "timer",
+    "errorCode": "provider_quota",
+    "error": "ACP agent reported a terminal limit failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal limit failure."
+    }
+  },
+  {
+    "id": "e9b0ec0d",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T05:40:07.591Z",
+    "invocationSource": "automation",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "Done. DAN-308 is `blocked` on DAN-373, with Dante live on it..."
+    }
+  },
+  {
+    "id": "89f6213d",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T05:46:05.994Z",
+    "invocationSource": "assignment",
+    "errorCode": "issue_reassigned",
+    "error": "Cancelled before issue reassignment",
+    "resultJson": {
+      "summary": "All six landed and verified. Posting the evidence comment, t..."
+    }
+  },
+  {
+    "id": "faf39a28",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T05:50:28.864Z",
+    "invocationSource": "automation",
+    "errorCode": "issue_reassigned",
+    "error": "Cancelled before issue reassignment",
+    "resultJson": {
+      "summary": "No cross-engine cap or truncation in `engine_runner` \u2014 every..."
+    }
+  },
+  {
+    "id": "d196e9fb",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T05:52:22.995Z",
+    "invocationSource": "automation",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "Heartbeat complete. Woken by `heartbeat_timer` with nothing ..."
+    }
+  },
+  {
+    "id": "fbe863f5",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T06:13:16.982Z",
+    "invocationSource": "assignment",
+    "errorCode": "issue_reassigned",
+    "error": "Cancelled before issue reassignment",
+    "resultJson": {
+      "summary": "No gate \u2014 and given I made two wrong calls on this exact sub..."
+    }
+  },
+  {
+    "id": "a13da278",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T06:51:09.036Z",
+    "invocationSource": "assignment",
+    "errorCode": "issue_reassigned",
+    "error": "Cancelled before issue reassignment",
+    "resultJson": {
+      "summary": "Verification is complete. Key findings before I decide:"
+    }
+  },
+  {
+    "id": "6c5e0270",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T06:59:11.823Z",
+    "invocationSource": "assignment",
+    "errorCode": "issue_reassigned",
+    "error": "Cancelled before issue reassignment",
+    "resultJson": {
+      "summary": "Verified independently. One real defect found, and one corre..."
+    }
+  },
+  {
+    "id": "84080dce",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T07:03:18.323Z",
+    "invocationSource": "assignment",
+    "errorCode": "issue_reassigned",
+    "error": "Cancelled before issue reassignment",
+    "resultJson": {
+      "summary": "Now I have the full picture, and it differs materially from ..."
+    }
+  },
+  {
+    "id": "b554e7e5",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T07:09:18.302Z",
+    "invocationSource": "assignment",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "**DAN-385: approved and closed `done`.** Execution state rea..."
+    }
+  },
+  {
+    "id": "3ef85ca5",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T07:12:58.425Z",
+    "invocationSource": "assignment",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "Revision 8 is live with both fixes in the wording. Now verif..."
+    }
+  },
+  {
+    "id": "f2d36cb1",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T07:15:08.073Z",
+    "invocationSource": "automation",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "b2a395d9",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T10:00:07.978Z",
+    "invocationSource": "assignment",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "b7b9940b",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T10:01:08.775Z",
+    "invocationSource": "automation",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "8d640fc9",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T10:02:08.788Z",
+    "invocationSource": "automation",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "36f8dbd3",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T10:32:37.896Z",
+    "invocationSource": "timer",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "e23a3c8e",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T11:03:07.990Z",
+    "invocationSource": "timer",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "2da4b50d",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T11:33:38.131Z",
+    "invocationSource": "timer",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "08d073d7",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T12:04:08.269Z",
+    "invocationSource": "timer",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "0c9c62a5",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T12:34:38.390Z",
+    "invocationSource": "timer",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "1105bb35",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T13:05:08.521Z",
+    "invocationSource": "timer",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "a671c87f",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T13:35:38.637Z",
+    "invocationSource": "timer",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "130478c6",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "failed",
+    "startedAt": "2026-10-04T14:06:08.758Z",
+    "invocationSource": "timer",
+    "errorCode": "acpx_turn_failed",
+    "error": "ACP agent reported a terminal access failure.",
+    "resultJson": {
+      "summary": "ACP agent reported a terminal access failure."
+    }
+  },
+  {
+    "id": "a4af2138",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T14:15:38.205Z",
+    "invocationSource": "on_demand",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "DAN-390 is approved and closed. Summary:\n\n## Decision: APPRO..."
+    }
+  },
+  {
+    "id": "e95b4e62",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T14:17:11.639Z",
+    "invocationSource": "on_demand",
+    "errorCode": "issue_terminal_status",
+    "error": "Cancelled because issue reached terminal status (done) before the queued run could start",
+    "resultJson": null
+  },
+  {
+    "id": "b13260f1",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T14:22:13.924Z",
+    "invocationSource": "assignment",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "DAN-213 is closed. Summary:\n\n**The verdict.** Both deliverab..."
+    }
+  },
+  {
+    "id": "e6e6652b",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T14:35:09.924Z",
+    "invocationSource": "on_demand",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "Stand-down held. Here's what came out of it.\n\n## The headlin..."
+    }
+  },
+  {
+    "id": "8a510021",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T14:43:07.402Z",
+    "invocationSource": "assignment",
+    "errorCode": "issue_terminal_status",
+    "error": "Cancelled because issue reached terminal status (done) before the queued run could start",
+    "resultJson": null
+  },
+  {
+    "id": "7818d93a",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T14:45:05.462Z",
+    "invocationSource": "assignment",
+    "errorCode": "issue_terminal_status",
+    "error": "Cancelled because issue reached terminal status (done) before the queued run could start",
+    "resultJson": null
+  },
+  {
+    "id": "3246a68d",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T14:46:30.463Z",
+    "invocationSource": "assignment",
+    "errorCode": "issue_terminal_status",
+    "error": "Cancelled because issue reached terminal status (done) before the queued run could start",
+    "resultJson": null
+  },
+  {
+    "id": "12cc3fd8",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T14:51:32.351Z",
+    "invocationSource": "assignment",
+    "errorCode": "issue_terminal_status",
+    "error": "Cancelled because issue reached terminal status (done) before the queued run could start",
+    "resultJson": null
+  },
+  {
+    "id": "c50a46a8",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "succeeded",
+    "startedAt": "2026-10-04T14:55:18.547Z",
+    "invocationSource": "automation",
+    "errorCode": null,
+    "error": null,
+    "resultJson": {
+      "summary": "Applied @Virgil's wake comment and cleared everything the pr..."
+    }
+  },
+  {
+    "id": "1371c194",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T14:59:05.116Z",
+    "invocationSource": "assignment",
+    "errorCode": "issue_terminal_status",
+    "error": "Cancelled because issue reached terminal status (done) before the queued run could start",
+    "resultJson": null
+  },
+  {
+    "id": "704124f0",
+    "agentId": "c28db8ef-7f04-4c21-b575-ddee819e050a",
+    "status": "cancelled",
+    "startedAt": "2026-10-04T15:00:53.128Z",
+    "invocationSource": "assignment",
+    "errorCode": "issue_reassigned",
+    "error": "Cancelled before issue reassignment",
+    "resultJson": {
+      "summary": "DAN-457 has a live Minos gate and Minos is reachable \u2014 so th..."
+    }
+  }
+]
