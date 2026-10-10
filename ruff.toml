@@ -40,3 +40,10 @@ ignore = [
     # for every Qt model there will ever be.
     "B008",
 ]
+
+# DAN-1216: the seat-health watchdog originals are restored verbatim and the
+# acceptance bar is byte-identity with the originals, so their three
+# pre-existing findings are ignored per-file rather than edited away.
+[lint.per-file-ignores]
+"ops/seat_watchdog.py" = ["F401", "B007"]
+"tests/ops_runners/test_routine_checkout_watchdog.py" = ["F401"]

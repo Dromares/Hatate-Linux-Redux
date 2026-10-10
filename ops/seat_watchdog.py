@@ -1,382 +1,851 @@
-"""Seat-health watchdog, arm 1 (DAN-218): detect a seat crash-looping.
+#!/usr/bin/env python3
+"""Seat-health watchdog, narrow arm -- DAN-218 (design: DAN-215 trigger-spec,
+narrowed by the 2026-10-03 DAN-218 wake comment).
 
-A finding is one seat (`agentId`) whose most recent heartbeat runs show 3 or
-more CONSECUTIVE non-succeeded, non-cancelled runs that produced no new
-evidence -- a bare crash before the agent ever got a turn (`resultJson`
-missing a `summary`, or carrying one byte-for-byte identical to the run's own
-top-level `error` -- the `acpx_turn_failed` "...terminal access failure."
-shape is the canonical example) -- spanning at least 10 minutes from the
-oldest to the newest run in that streak. The span requirement exists so a
-handful of retries fired seconds apart by the platform itself never counts;
-a real crash loop burns wall-clock time.
+Fires visibility-only when a seat (agentId) racks up 3+ consecutive
+non-succeeded, non-cancelled runs that produce NO NEW EVIDENCE -- the
+crash-before-first-tool-call `acpx_turn_failed`/`process_lost`/etc shape --
+spanning >=10 minutes first-to-latest. It is NOT a blanket "3 failures"
+counter: a non-succeeded run that still produced its own narrative result
+(the DAN-171 shape: ran a real probe, posted a dispositive comment, even at
+$0 and even several times in a row) is explicitly exempt and does not count
+toward, or reset, the streak. Only a `succeeded` run resets the streak.
 
-Two kinds of run are exempt from the streak: they neither extend it nor reset
-it, they are simply skipped over.
+`"...terminal limit failure."` is excluded entirely -- that quota-exhaustion
+fault already has an owned triage path, ops/limit-triage.py.
 
-* A non-succeeded run carrying a REAL narrative of its own -- a distinct
-  `resultJson.summary` that differs from the raw `error` (it ran a probe,
-  posted a dispositive comment, the DAN-171 shape) -- even at $0, even
-  several times in a row. The agent got a turn and did something; that is
-  evidence the seat itself is not the problem.
-* A run whose bare-crash text is the literal "...terminal limit failure."
-  shape (`errorFamily: provider_quota` reads identically to a real crash by
-  the summary/error test above, but it is a terminal/budget condition this
-  watchdog does not own -- see `ops/limit-triage.py`).
+Action on a qualifying streak is VISIBILITY ONLY: no status change on any
+OTHER issue, no escalation to the affected seat's owner, no auto-block. That
+DAN-218 narrowing still holds. What changed under DAN-289 (report-on-
+exception) is only how the finding is *recorded*: instead of a comment that
+gets buried in this tick's own execution issue and lost the moment that
+issue closes, a qualifying finding is filed as -- or updates -- a single
+tracking issue owned by this watchdog itself (`--file-findings`), titled
+with the actual finding and tagged with a stable `[agentId]` marker so a
+repeat finding on the same seat updates that issue instead of spawning a
+sibling. This is still not an escalation: the tracking issue is assigned to
+the watchdog's own owner, not the affected seat, and nothing about the
+affected seat's own tickets is touched.
 
-Only a `succeeded` run resets the streak to zero; a `cancelled` run is
-likewise skipped (it says nothing about whether the seat is unhealthy).
+DAN-289 review (changes requested) found that the first cut of the above
+still re-filed a sibling the moment a tracker closed: `find_existing_
+finding_issue` only searched OPEN tracking issues, so a closed tracker's
+already-reported streak -- which stays inside the `--limit` lookback window
+until it ages out -- looked brand new on the very next tick (DAN-329 ->
+closed -> DAN-336 re-filed the identical historical evidence 5 minutes
+later; see DAN-339). Fixed by:
+  - `find_existing_finding_issue` now searches ALL statuses, not just the
+    open ones, so a closed tracker for the same seat is still found.
+  - Each run this watchdog has already reported is covered by a persistent
+    per-seat high-water mark -- not a separate store, but read back out of
+    the tracking issue's own description/comments (every reported run's
+    timestamp is already embedded there in `describe_finding`'s bullet
+    list). `filter_already_covered` drops any run at or before that
+    covered-cutoff before streak detection runs, so a closed tracker's
+    evidence can never requalify -- only genuinely new runs after the
+    cutoff can.
+  - If a genuinely new streak appears for a seat whose tracker is closed,
+    that tracker is resumed (`resume: true`, reopened to `todo`) rather
+    than a sibling filed.
 
-Findings are visibility-only: `--file-findings` dedupes on a stable
-`[<agentId>]` marker in a tracking issue's title, owned by THIS watchdog's
-own agent (never the affected seat) -- an already-open tracker gets an
-update comment, a closed one is resumed once, and a tracker that is closed
-and was already resumed once before only gets a plain comment
-("noted_closed") with no status change. `ACTIONABLE: yes` on stdout iff at
-least one finding this tick resulted in a brand-new tracker being filed
-(DAN-491, narrowed from DAN-385's three-way updated/resumed/noted_closed
-split): a human has not seen a brand-new tracker before, but has already
-seen an updated or resumed one.
+DAN-339 changes-requested round: the fix above stopped the new-ticket-on-
+close path but not a second, distinct thrash path it left open -- `resume`
+fired on EVERY tick with genuinely-new-by-timestamp evidence, even when that
+evidence was just another instance of the exact same already-diagnosed,
+non-actionable root cause (e.g. the `issues_open_routine_execution_uq`
+platform collision from DAN-329). A tracker closed with that finding would
+get yanked back to `todo`, re-closed, yanked back again, etc. -- the same
+reopen/update noise this ticket exists to stop, just without a new DAN
+number. Fixed by throttling auto-resume: `count_prior_resumes` counts how
+many times a tracker has already been auto-reopened (via the `## New
+occurrence (resumed)` comment marker `file_or_update_finding` itself posts
+on resume). Once a closed tracker has hit `MAX_AUTO_RESUMES`, further new
+streaks are recorded as a comment on the still-closed issue instead of
+flipping its status -- visible, but no more status thrash. A human (or a
+future tick after a genuine fix) can still reopen it manually; this only
+throttles the watchdog's own auto-resume.
+
+DAN-491: DAN-385 requirement 6 moved `noted_closed` off this tick's own
+ACTIONABLE signal but left `updated` and `resumed` on it, so a tick whose
+only activity was a comment on an already-open tracker (`updated`) or
+flipping an already-known tracker back open (`resumed`) still kept this
+tick's own execution issue `done` -- live evidence on DAN-468/DAN-482, zero
+new findings for a human to read, exactly the pattern DAN-289 was filed to
+stop. `ACTIONABLE_ACTIONS` now holds only `"filed"`: the single outcome
+that puts a tracking issue in front of a human for the first time.
+
+DAN-526: a real escalation (DAN-337) read several of this watchdog's own
+"## Update" comments on the SAME tracker, stitched together across many
+hours, and concluded "14 hours, zero succeeded runs" for a seat that had in
+fact succeeded 28 times in that span and had already self-recovered 49
+minutes before the comment citing it was written. Each individual comment's
+3-4-run sample was accurate; the problem is that neither the sample nor the
+comment said anything about what happened *around* it. Fixed by attaching,
+to every finding, the full per-seat denominator over the same fetched
+window used for detection (`agent_window_stats`) and a check for a later
+`succeeded` run for that seat (`find_recovery`) -- both computed from the
+UNFILTERED run list, since `filter_already_covered` deliberately drops
+already-reported history and must not become the source of truth for "did
+this seat ever succeed". `describe_finding` now always states the
+denominator and labels a finding "intermittent" (successes exist in-window)
+or "self-recovered" (a later success already landed) rather than reading as
+an undifferentiated, ongoing, zero-success outage. A brand-new finding that
+is already self-recovered by emit time does not mint a tracker at all
+(`"self_recovered_noted"`, never `ACTIONABLE`) -- the whole point of filing
+is to put a live incident in front of a human, and this one is already
+over.
+
+DAN-531: `find_existing_finding_issue`'s dedupe is a read-then-write with no
+atomicity, so two concurrent ticks can both miss (or both hit the same
+match) and then both write -- live data showed exactly this: two seats each
+with two CLOSED trackers, filed ~8-9min apart. DAN-526's earliest-created
+tie-break already makes a closed-duplicate pair harmless (the original
+filing always wins, regardless of which one this watchdog touches next).
+The open case was not covered: two freshly-raced OPEN trackers would hand
+the same self-reinforcing bias DAN-526 fixed for closed matches right back
+-- whichever this watchdog picks first keeps winning (every pick posts an
+update), permanently orphaning the other. Fixed by (1) the same earliest-
+created tie-break for open matches (`_pick_canonical_match`), and (2)
+`reconcile_duplicate_trackers`, called from every `file_or_update_finding`
+write path, which closes down any OTHER open match for the seat once a
+canonical one is known -- merging a race-produced duplicate after the fact
+rather than adding a lock (no documented idempotency-key support exists on
+the issue-create endpoint to prevent the race up front).
+
+Usage:
+  PAPERCLIP_API_KEY=... PAPERCLIP_API_URL=... PAPERCLIP_COMPANY_ID=... \
+      python3 ops/seat_watchdog.py [--limit 300] [--post-comment-on ISSUE_ID] [--dry-run]
+      [--file-findings --project-id PID --assignee-agent-id AID]
+
+Exit code is always 0 -- this script only reports, it never signals failure
+of the seats it is watching.
 """
-
-from __future__ import annotations
-
 import argparse
 import json
 import os
+import re
+import sys
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Iterable, Optional
+from datetime import datetime, timezone
 
-MIN_STREAK = 3
-MIN_SPAN_MINUTES = 10
-RESUME_MARKER = "_(auto-resumed by ops/seat_watchdog.py)_"
-EXCLUDED_ERROR_SUBSTRING = "terminal limit failure"
+QUALIFYING_COUNT = 3
+MIN_SPAN_SECONDS = 10 * 60  # trigger-spec §2: >=10min first-to-latest guards against fast retry bursts
+LIMIT_FAILURE_MARKER = "terminal limit failure"  # owned by ops/limit-triage.py -- excluded here
+FINDING_OPEN_STATUSES = ("todo", "in_progress", "in_review", "blocked")
+RESUME_MARKER = "## New occurrence (resumed)"  # tag `file_or_update_finding` posts whenever it auto-resumes a closed tracker
+MAX_AUTO_RESUMES = 1  # DAN-339: after this many auto-resumes, repeat instances of the same closed, already-diagnosed finding are only commented, never used to flip status again
 
-# DAN-491: narrowed to "filed" only. An already-open tracker merely being
-# touched again is real activity, but it puts nothing NEW in front of a
-# human on this tick's own execution issue.
-ACTIONABLE_ACTIONS = {"filed"}
-
-
-def _parse_timestamp(value: Optional[str]) -> Optional[datetime]:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
+# Matches a `describe_finding` bullet line, e.g.
+#   - `run-123` 2026-10-03T21:45:06.304000+00:00 process_lost: Process lost...
+# Used to recover the per-seat high-water mark from a tracking issue's own
+# description/comments -- no separate state store needed.
+RUN_LINE_RE = re.compile(
+    r"`[^`]+`\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\+\d{2}:\d{2}|Z))"
+)
 
 
-def _run_timestamp(run: dict[str, Any]) -> Optional[datetime]:
-    return _parse_timestamp(run.get("startedAt")) or _parse_timestamp(run.get("finishedAt"))
+def api_get(path):
+    base = os.environ["PAPERCLIP_API_URL"].rstrip("/")
+    if base.endswith("/api"):
+        base = base[: -len("/api")]
+    req = urllib.request.Request(
+        base + path,
+        headers={"Authorization": "Bearer " + os.environ["PAPERCLIP_API_KEY"]},
+    )
+    with urllib.request.urlopen(req) as resp:
+        return json.load(resp)
 
 
-def _bare_crash_text(run: dict[str, Any]) -> Optional[str]:
-    """The run's own crash text, or None if this run is not a bare crash.
-
-    A run is a bare crash (no new evidence) when its `resultJson.summary`
-    is missing, or is identical to the run's top-level `error` field -- the
-    agent produced nothing of its own before dying. Returns the matched
-    text so callers can check it against the excluded-phrase list without
-    re-deriving it.
-    """
-    result_json = run.get("resultJson") or {}
-    summary = result_json.get("summary")
-    raw_error = run.get("error")
-    if not summary:
-        return raw_error or ""
-    if summary == raw_error:
-        return summary
-    return None
-
-
-class RunClass:
-    RESETS = "resets"
-    COUNTS = "counts"
-    SKIPS = "skips"
+def api_post(path, body):
+    base = os.environ["PAPERCLIP_API_URL"].rstrip("/")
+    if base.endswith("/api"):
+        base = base[: -len("/api")]
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        base + path,
+        data=data,
+        method="POST",
+        headers={
+            "Authorization": "Bearer " + os.environ["PAPERCLIP_API_KEY"],
+            "Content-Type": "application/json",
+            "X-Paperclip-Run-Id": os.environ.get("PAPERCLIP_RUN_ID", ""),
+        },
+    )
+    with urllib.request.urlopen(req) as resp:
+        return json.load(resp)
 
 
-def classify_run(run: dict[str, Any]) -> str:
-    """Classify one heartbeat run for the crash-streak walk."""
+def api_patch(path, body):
+    base = os.environ["PAPERCLIP_API_URL"].rstrip("/")
+    if base.endswith("/api"):
+        base = base[: -len("/api")]
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        base + path,
+        data=data,
+        method="PATCH",
+        headers={
+            "Authorization": "Bearer " + os.environ["PAPERCLIP_API_KEY"],
+            "Content-Type": "application/json",
+            "X-Paperclip-Run-Id": os.environ.get("PAPERCLIP_RUN_ID", ""),
+        },
+    )
+    with urllib.request.urlopen(req) as resp:
+        return json.load(resp)
+
+
+def parse_ts(ts):
+    return datetime.fromisoformat(ts.replace("Z", "+00:00")) if ts else None
+
+
+def run_ts(run):
+    return parse_ts(run.get("startedAt") or run.get("createdAt"))
+
+
+def classify_run(run):
+    """Returns one of: 'ignore' (non-terminal), 'reset' (succeeded),
+    'transparent' (cancelled, limit-failure, or produced-new-evidence --
+    skip, affects nothing), 'bare_crash' (counts toward the streak)."""
     status = run.get("status")
-    if status == "succeeded":
-        return RunClass.RESETS
+    if status in ("queued", "running"):
+        return "ignore"
     if status == "cancelled":
-        return RunClass.SKIPS
+        return "transparent"
+    if status == "succeeded":
+        return "reset"
 
-    crash_text = _bare_crash_text(run)
-    if crash_text is None:
-        # Non-succeeded, non-cancelled, but with its own distinct
-        # narrative -- exempt, per the DAN-171 shape.
-        return RunClass.SKIPS
-    if EXCLUDED_ERROR_SUBSTRING in crash_text:
-        # Owned by ops/limit-triage.py, not this watchdog.
-        return RunClass.SKIPS
-    return RunClass.COUNTS
+    error = run.get("error") or ""
+    if LIMIT_FAILURE_MARKER in error:
+        return "transparent"
 
-
-@dataclass
-class SeatFinding:
-    agent_id: str
-    streak_runs: list[dict[str, Any]] = field(default_factory=list)
-
-    @property
-    def streak_length(self) -> int:
-        return len(self.streak_runs)
-
-    @property
-    def span_minutes(self) -> float:
-        timestamps = [ts for ts in (_run_timestamp(r) for r in self.streak_runs) if ts is not None]
-        if len(timestamps) < 2:
-            return 0.0
-        return (max(timestamps) - min(timestamps)).total_seconds() / 60.0
-
-    @property
-    def latest_run(self) -> dict[str, Any]:
-        return self.streak_runs[0]
-
-    @property
-    def oldest_run(self) -> dict[str, Any]:
-        return self.streak_runs[-1]
+    result_json = run.get("resultJson")
+    summary = (result_json or {}).get("summary") if isinstance(result_json, dict) else None
+    # A bare crash-before-first-tool-call run has no model-authored summary at
+    # all, or the harness just echoed the raw error back as the "summary" --
+    # i.e. the model never got far enough to say anything of its own. Any
+    # distinct, model-authored summary text means the run did real work
+    # (probed something, posted a comment) before ending non-succeeded --
+    # the DAN-171 shape -- and is exempt.
+    if summary is None or summary == error:
+        return "bare_crash"
+    return "transparent"
 
 
-def find_seat_finding(agent_id: str, runs_newest_first: Iterable[dict[str, Any]]) -> Optional[SeatFinding]:
-    """Walk one seat's runs (newest first) for a currently-active crash streak.
-
-    Stops the moment a `succeeded` run is found -- anything before it
-    already resolved. `cancelled` and exempt runs are skipped without
-    breaking the walk, so a probe or a cancellation in the middle of a real
-    crash loop never hides it.
+def compute_findings(runs):
+    """runs: list of heartbeat-run dicts (any mix of agents/issues).
+    Returns a list of findings, each a dict with agentId and the 3+ run
+    dicts that make up the qualifying streak. Fires at most once per
+    contiguous streak (streak resets only on a `succeeded` run for that
+    agent), so a 14-run bare-crash band produces exactly one finding, not
+    one per run past the threshold.
     """
-    streak: list[dict[str, Any]] = []
-    for run in runs_newest_first:
-        cls = classify_run(run)
-        if cls == RunClass.RESETS:
-            break
-        if cls == RunClass.COUNTS:
-            streak.append(run)
-        # RunClass.SKIPS: continue past it without touching the streak.
-
-    if len(streak) < MIN_STREAK:
-        return None
-
-    finding = SeatFinding(agent_id=agent_id, streak_runs=streak)
-    if finding.span_minutes < MIN_SPAN_MINUTES:
-        return None
-    return finding
-
-
-def group_runs_by_seat(runs: Iterable[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    by_seat: dict[str, list[dict[str, Any]]] = {}
+    by_agent = {}
     for run in runs:
-        agent_id = run.get("agentId")
-        if not agent_id:
-            continue
-        by_seat.setdefault(agent_id, []).append(run)
-    return by_seat
+        by_agent.setdefault(run["agentId"], []).append(run)
 
-
-def find_findings(runs: Iterable[dict[str, Any]]) -> list[SeatFinding]:
-    """Findings across all seats present in `runs`.
-
-    `runs` must already be sorted newest-first per seat (the heartbeat-runs
-    list endpoint returns that order; this function does not re-sort, so a
-    caller feeding it oldest-first data will silently get wrong answers --
-    deliberately not defended against here, to keep this a thin, auditable
-    wrapper around `find_seat_finding` rather than a second place that
-    encodes sort order).
-    """
     findings = []
-    for agent_id, seat_runs in group_runs_by_seat(runs).items():
-        finding = find_seat_finding(agent_id, seat_runs)
-        if finding is not None:
-            findings.append(finding)
+    for agent_id, agent_runs in by_agent.items():
+        ordered = sorted((r for r in agent_runs if run_ts(r) is not None), key=run_ts)
+        streak = []
+        fired = False
+        for run in ordered:
+            cls = classify_run(run)
+            if cls == "ignore" or cls == "transparent":
+                continue
+            if cls == "reset":
+                streak = []
+                fired = False
+                continue
+            # bare_crash
+            streak.append(run)
+            if (
+                not fired
+                and len(streak) >= QUALIFYING_COUNT
+                and (run_ts(streak[-1]) - run_ts(streak[0])).total_seconds() >= MIN_SPAN_SECONDS
+            ):
+                findings.append({"agentId": agent_id, "runs": list(streak)})
+                fired = True
     return findings
 
 
-class PaperclipClient:
-    """Thin HTTP wrapper around the Paperclip issues/runs API.
+def agent_window_stats(agent_id, all_runs):
+    """DAN-526 denominator: succeeded/failed/cancelled counts for `agent_id`
+    across the SAME unfiltered run list used for streak detection this tick
+    (i.e. the same wall-clock window the watchdog is already looking at),
+    plus that window's first/last timestamp and up to 5 sample succeeded-run
+    timestamps. Must be computed from the unfiltered fetch, never from the
+    `filter_already_covered` output -- that filter exists to stop a streak
+    re-qualifying, and already drops the very successes this exists to
+    surface. Returns None if `agent_id` has no timestamped runs at all."""
+    agent_runs = sorted(
+        (r for r in all_runs if r.get("agentId") == agent_id and run_ts(r) is not None),
+        key=run_ts,
+    )
+    if not agent_runs:
+        return None
+    succeeded = [r for r in agent_runs if r.get("status") == "succeeded"]
+    cancelled = [r for r in agent_runs if r.get("status") == "cancelled"]
+    failed = [r for r in agent_runs if r.get("status") not in ("succeeded", "cancelled", "queued", "running")]
+    return {
+        "window_start": run_ts(agent_runs[0]),
+        "window_end": run_ts(agent_runs[-1]),
+        "succeeded": len(succeeded),
+        "failed": len(failed),
+        "cancelled": len(cancelled),
+        "succeeded_timestamps": [run_ts(r) for r in succeeded[:5]],
+    }
 
-    Kept separate from the dedupe logic so tests can swap in a fake that
-    never touches the network.
-    """
 
-    def __init__(self, api_base: str, api_key: str, run_id: Optional[str] = None) -> None:
-        self.api_base = api_base.rstrip("/")
-        self.api_key = api_key
-        self.run_id = run_id
+def find_recovery(finding, all_runs):
+    """DAN-526 self-recovery check: the earliest `succeeded` run for this
+    finding's seat strictly after the streak's own last run, read from the
+    UNFILTERED run list (never from `filter_already_covered`'s output, for
+    the same reason as `agent_window_stats`). Returns that timestamp, or
+    None if the seat has not succeeded again since this streak ended --
+    i.e. whether, by the time this finding is about to be described or
+    filed, the incident it describes is already over."""
+    agent_id = finding["agentId"]
+    streak_end = run_ts(finding["runs"][-1])
+    later_successes = sorted(
+        ts
+        for r in all_runs
+        if r.get("agentId") == agent_id and r.get("status") == "succeeded"
+        and (ts := run_ts(r)) is not None and ts > streak_end
+    )
+    return later_successes[0] if later_successes else None
 
-    def _request(self, method: str, path: str, body: Optional[dict[str, Any]] = None) -> Any:
-        url = f"{self.api_base}{path}"
-        data = json.dumps(body).encode() if body is not None else None
-        req = urllib.request.Request(url, data=data, method=method)
-        req.add_header("Authorization", f"Bearer {self.api_key}")
-        req.add_header("Content-Type", "application/json")
-        if self.run_id:
-            req.add_header("X-Paperclip-Run-Id", self.run_id)
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode())
 
-    def list_recent_runs(self, company_id: str, limit: int) -> list[dict[str, Any]]:
-        path = f"/api/companies/{company_id}/heartbeat-runs?limit={limit}"
-        result = self._request("GET", path)
-        return result.get("runs", []) if isinstance(result, dict) else result
-
-    def find_tracker(self, company_id: str, agent_id: str) -> Optional[dict[str, Any]]:
-        marker = f"[{agent_id}]"
-        path = f"/api/companies/{company_id}/issues?q={urllib.parse.quote(marker)}&limit=50"
-        result = self._request("GET", path)
-        issues = result.get("issues", []) if isinstance(result, dict) else result
-        for issue in issues:
-            if marker in (issue.get("title") or ""):
-                return issue
+def true_streak_extent(finding, all_runs):
+    """DAN-777: `finding["runs"]` is the 3+-run sample `compute_findings`
+    froze at the moment the streak first qualified -- correct for its own
+    fires-once-per-streak dedup, but it stops growing even though the real
+    streak keeps extending for every subsequent bare-crash run until a
+    `succeeded` run resets it. This re-walks the UNFILTERED run list (same
+    reason as `agent_window_stats`/`find_recovery`: `filter_already_
+    covered`'s output must never be the source here) starting at the
+    finding's own first run, re-applying `classify_run`'s exact streak
+    rules, to find the TRUE current count/span of that same contiguous
+    streak -- for display only; it never changes `finding["runs"]` itself.
+    Returns None if the finding's first run cannot be located in
+    `all_runs` (should not happen: `all_runs` is always a superset of
+    whatever `compute_findings` was run against)."""
+    agent_id = finding["agentId"]
+    start_id = finding["runs"][0].get("id")
+    ordered = sorted(
+        (r for r in all_runs if r.get("agentId") == agent_id and run_ts(r) is not None),
+        key=run_ts,
+    )
+    start_index = next((i for i, r in enumerate(ordered) if r.get("id") == start_id), None)
+    if start_index is None:
         return None
 
-    def list_comments(self, issue_id: str) -> list[dict[str, Any]]:
-        result = self._request("GET", f"/api/issues/{issue_id}/comments")
-        return result.get("comments", []) if isinstance(result, dict) else result
+    streak = []
+    ongoing = True
+    for run in ordered[start_index:]:
+        cls = classify_run(run)
+        if cls in ("ignore", "transparent"):
+            continue
+        if cls == "reset":
+            ongoing = False
+            break
+        streak.append(run)  # bare_crash
+    if not streak:
+        return None
+    return {
+        "count": len(streak),
+        "start": run_ts(streak[0]),
+        "end": run_ts(streak[-1]),
+        "ongoing": ongoing,
+    }
 
-    def create_tracker(
-        self, company_id: str, project_id: str, assignee_agent_id: str, title: str, description: str
-    ) -> dict[str, Any]:
-        return self._request(
-            "POST",
-            f"/api/companies/{company_id}/issues",
+
+def describe_finding(finding, agent_names=None, window_stats=None, recovered_at=None, all_runs=None):
+    names = agent_names or {}
+    agent_label = names.get(finding["agentId"], finding["agentId"])
+    runs = finding["runs"]
+    first, last = run_ts(runs[0]), run_ts(runs[-1])
+    status_label = (
+        "self-recovered" if recovered_at is not None
+        else "intermittent" if window_stats and window_stats["succeeded"] > 0
+        else "ongoing"
+    )
+    # DAN-777: when the unfiltered run list is available, report the TRUE
+    # current extent of this streak in the headline instead of the frozen
+    # sample above -- the frozen sample stays below as the bulleted list,
+    # it just stops being what the headline's count/span are computed
+    # from. Falls back to the frozen sample when `all_runs` isn't passed
+    # (direct/unit-test callers that only have the finding itself).
+    extent = true_streak_extent(finding, all_runs) if all_runs is not None else None
+    headline_count = extent["count"] if extent else len(runs)
+    headline_first = extent["start"] if extent else first
+    headline_last = extent["end"] if extent else last
+    lines = [
+        f"Seat **{agent_label}** ({finding['agentId']}) has {headline_count} consecutive "
+        f"non-succeeded, no-new-evidence runs spanning "
+        f"{(headline_last - headline_first).total_seconds() / 60:.0f} minutes "
+        f"({headline_first.isoformat()} → {headline_last.isoformat()}) -- **{status_label}**:",
+    ]
+    if extent and extent["count"] > len(runs):
+        lines.append(
+            f"(Showing the first {len(runs)} runs of this streak below -- it "
+            f"{'is still ongoing as of this fetch' if extent['ongoing'] else 'continued until the reset below'} "
+            f"and reached {extent['count']} runs by {extent['end'].isoformat()}.)"
+        )
+    for r in runs:
+        lines.append(
+            f"- `{r.get('id')}` {run_ts(r).isoformat()} [{r.get('invocationSource') or 'unknown'}] "
+            f"{r.get('errorCode')}: {r.get('error')}"
+        )
+    # DAN-526 acceptance #1/#2: the denominator and per-run invocationSource
+    # above are what let a reader of this ONE comment tell a real outage
+    # apart from a streak embedded in an otherwise-healthy seat, without
+    # having to stitch together every other comment this watchdog has ever
+    # posted for the same tracker.
+    if window_stats:
+        lines.append(
+            f"\nWindow totals for this seat ({window_stats['window_start'].isoformat()} → "
+            f"{window_stats['window_end'].isoformat()}): **{window_stats['succeeded']} succeeded** / "
+            f"{window_stats['failed']} failed / {window_stats['cancelled']} cancelled. This is the "
+            "denominator for the streak above -- do not read the streak as a zero-success outage "
+            "without checking this line."
+        )
+        if window_stats["succeeded"] > 0:
+            sample = ", ".join(ts.isoformat() for ts in window_stats["succeeded_timestamps"])
+            lines.append(f"Succeeded runs for this seat in this window include: {sample}.")
+    if recovered_at is not None:
+        minutes_since = (recovered_at - last).total_seconds() / 60
+        lines.append(
+            f"\n**Self-recovered**: this seat succeeded again at {recovered_at.isoformat()} "
+            f"({minutes_since:.0f} min after the streak above ended), before this finding was "
+            "ever reported. This is historical evidence of a resolved streak, not an ongoing outage."
+        )
+    return "\n".join(lines)
+
+
+def agent_names(company_id):
+    try:
+        agents = api_get(f"/api/companies/{company_id}/agents")
+        return {a["id"]: a.get("name") or a.get("displayName") or a["id"] for a in agents}
+    except Exception:
+        return {}
+
+
+def finding_marker(agent_id):
+    """Stable per-seat dedupe tag embedded in the tracking issue's title."""
+    return f"[{agent_id}]"
+
+
+def finding_title(finding, agent_names=None, recovered_at=None):
+    names = agent_names or {}
+    label = names.get(finding["agentId"], finding["agentId"])
+    n = len(finding["runs"])
+    suffix = " (self-recovered)" if recovered_at is not None else ""
+    return (
+        f"Seat-health: {label} -- {n} consecutive no-evidence crashes{suffix} "
+        f"{finding_marker(finding['agentId'])}"
+    )
+
+
+def is_finding_tracking_issue(issue, agent_id):
+    """True if `issue` is this seat's open tracking issue -- matched on the
+    stable `[agentId]` marker in the title, not on the human-readable label
+    or count, both of which change between re-pokes."""
+    return finding_marker(agent_id) in (issue.get("title") or "")
+
+
+def _finding_matches(company_id, agent_id, api_get_fn=api_get):
+    """Raw list of this watchdog's own issues carrying `agent_id`'s exact
+    `[agentId]` marker in the title, across ALL statuses, in whatever order
+    the search endpoint returns them -- no picking, no tie-break. Split out
+    of `find_existing_finding_issue` (DAN-531) so `reconcile_duplicate_
+    trackers` can see every match a race may have produced, not just the
+    one canonical pick."""
+    listing = api_get_fn(
+        f"/api/companies/{company_id}/issues"
+        f"?q={urllib.parse.quote(finding_marker(agent_id))}&limit=50"
+    )
+    items = listing if isinstance(listing, list) else listing.get("issues", listing.get("data", []))
+    return [item for item in items if is_finding_tracking_issue(item, agent_id)]
+
+
+def _pick_canonical_match(matches):
+    """Of `matches` (same seat marker, any statuses), picks the one
+    `find_existing_finding_issue` treats as canonical: an open one wins over
+    a closed one; among ties, the EARLIEST-created wins. Returns None for an
+    empty list.
+
+    DAN-526: closed-match tie-break used to pick the most-recently-UPDATED
+    one. Live incident: a race once produced two closed trackers for the
+    same seat/marker, DAN-330 and DAN-337. Picking "most recently updated"
+    turns that into a self-reinforcing loop -- resuming/commenting on a
+    tracker is itself an update, so whichever duplicate this function picks
+    becomes more likely to be picked again next time, forever, regardless
+    of which one is actually canonical. DAN-337 got reopened and
+    re-commented on repeatedly (while a human kept re-closing it as a
+    duplicate of DAN-330) for exactly this reason. Earliest-created breaks
+    the loop: the original filing is always preferred, independent of how
+    many times either has been touched since.
+
+    DAN-531: the open-match tie-break had the identical flaw (most-recently-
+    updated), just never triggered by a live incident yet -- two freshly
+    raced OPEN trackers would otherwise let whichever one this function
+    first picks keep winning forever (every pick posts an update, which
+    only entrenches it further), silently orphaning the other as a
+    never-touched duplicate. Earliest-created for the open tie-break closes
+    that gap the same way, and is also what `reconcile_duplicate_trackers`
+    treats as the survivor when it merges a race-produced duplicate down."""
+    if not matches:
+        return None
+    open_matches = [m for m in matches if m.get("status") in FINDING_OPEN_STATUSES]
+    pool = open_matches if open_matches else matches
+    return min(pool, key=lambda m: m.get("createdAt") or m.get("updatedAt") or "")
+
+
+def find_existing_finding_issue(company_id, agent_id, api_get_fn=api_get):
+    """Searches this watchdog's own issues for `agent_id`'s tracking issue,
+    across ALL statuses -- a closed tracker still must be found so its
+    already-reported streak doesn't look brand new on the next tick (DAN-339:
+    searching only open statuses let a tracker that had just closed get
+    re-filed as a fresh sibling for the identical historical evidence).
+    Scoped to the company's issue-search endpoint, filtered client side on
+    the exact marker so an unrelated title substring match can't misfire.
+    See `_pick_canonical_match` for the tie-break when multiple matches
+    exist."""
+    return _pick_canonical_match(_finding_matches(company_id, agent_id, api_get_fn))
+
+
+def reconcile_duplicate_trackers(company_id, agent_id, canonical, api_get_fn=api_get,
+                                  api_patch_fn=api_patch):
+    """DAN-531: closes every OPEN tracking issue for `agent_id` other than
+    `canonical`.
+
+    The dedupe this watchdog relies on (`find_existing_finding_issue`) is a
+    read-then-write with no atomicity: two concurrent ticks can both query
+    it, both get back the same answer (or both get None), and both then
+    file or resume independently, producing two live trackers for one seat.
+    Live data showed this happening with two CLOSED trackers per seat
+    (DAN-330/DAN-337, DAN-329/DAN-336) -- already harmless, since
+    `_pick_canonical_match` deterministically prefers the earliest-created
+    one regardless. The open case is worse: left alone, the duplicate this
+    function doesn't pick as canonical would never be touched again by this
+    watchdog and would sit open forever.
+
+    Rather than adding a lock or an idempotency key (the issue-create
+    endpoint's request schema does not document support for one), this
+    repairs the symptom on the next write this watchdog already makes:
+    whenever more than one OPEN match for the seat's marker exists, every
+    one besides `canonical` is closed (`status: cancelled`) with a comment
+    pointing at it. Closing removes a reconciled duplicate from
+    `FINDING_OPEN_STATUSES`, so it is never reconsidered on a later tick --
+    no separate "already reconciled" marker needed. Already-closed
+    historical duplicates are left alone; this only merges down live,
+    currently-open siblings."""
+    matches = _finding_matches(company_id, agent_id, api_get_fn)
+    extra_open = [
+        m for m in matches
+        if m.get("status") in FINDING_OPEN_STATUSES and m.get("id") != canonical.get("id")
+    ]
+    label = canonical.get("identifier") or canonical.get("id")
+    for dup in extra_open:
+        api_patch_fn(
+            f"/api/issues/{dup['id']}",
             {
-                "title": title,
-                "description": description,
-                "projectId": project_id,
-                "assigneeAgentId": assignee_agent_id,
-                "priority": "medium",
+                "status": "cancelled",
+                "comment": (
+                    "## Duplicate tracker (DAN-531)\n\n"
+                    f"A concurrent watchdog tick raced this issue's filing or resume against "
+                    f"{label}, which this watchdog's dedupe treats as canonical for this seat "
+                    "(earliest-created). Closing this sibling so only one live tracker exists "
+                    f"per seat; see {label} for the ongoing record."
+                ),
             },
         )
 
-    def comment(self, issue_id: str, body: str) -> Any:
-        return self._request("POST", f"/api/issues/{issue_id}/comments", {"body": body})
 
-    def resume(self, issue_id: str, comment: str) -> Any:
-        return self._request("PATCH", f"/api/issues/{issue_id}", {"status": "todo", "comment": comment})
+def covered_cutoff(issue, api_get_fn=api_get):
+    """The latest run timestamp already reported by `issue` (open or
+    closed) -- recovered from its own description plus every comment,
+    since `describe_finding` already embeds each covered run's timestamp
+    in a `` `run-id` <iso-ts> `` bullet. Runs at or before this timestamp
+    are already covered by this seat's finding and must not requalify just
+    because they are still inside the lookback window. Returns None when
+    `issue` is None or carries no parseable run lines."""
+    if issue is None:
+        return None
+    texts = [issue.get("description") or ""]
+    try:
+        comments = api_get_fn(f"/api/issues/{issue['id']}/comments")
+        items = comments if isinstance(comments, list) else comments.get("comments", comments.get("data", []))
+        texts.extend(c.get("body") or "" for c in items)
+    except Exception:
+        pass
+    timestamps = [
+        ts
+        for text in texts
+        for m in RUN_LINE_RE.finditer(text)
+        if (ts := parse_ts(m.group(1))) is not None
+    ]
+    return max(timestamps) if timestamps else None
 
 
-def _tracker_title(agent_id: str) -> str:
-    return f"Seat-health watchdog: crash-loop on seat [{agent_id}]"
+def filter_already_covered(runs, company_id, api_get_fn=api_get):
+    """Drops any run already covered by an existing (open OR closed)
+    tracking issue for its seat, per `covered_cutoff`. This is what stops a
+    resolved streak from re-qualifying once its tracker closes -- a closed
+    tracker's evidence can never fire again; only genuinely new runs after
+    its high-water mark can start a fresh streak."""
+    cutoffs = {}
+    kept = []
+    for run in runs:
+        agent_id = run["agentId"]
+        if agent_id not in cutoffs:
+            existing = find_existing_finding_issue(company_id, agent_id, api_get_fn)
+            cutoffs[agent_id] = covered_cutoff(existing, api_get_fn)
+        cutoff = cutoffs[agent_id]
+        ts = run_ts(run)
+        if cutoff is not None and ts is not None and ts <= cutoff:
+            continue
+        kept.append(run)
+    return kept
 
 
-def _finding_summary(finding: SeatFinding) -> str:
-    return (
-        f"{finding.streak_length} consecutive non-succeeded, non-cancelled run(s) with no new "
-        f"evidence, spanning {finding.span_minutes:.1f} minutes "
-        f"(latest run {finding.latest_run.get('id')}, oldest {finding.oldest_run.get('id')})."
-    )
+def count_prior_resumes(issue, api_get_fn=api_get):
+    """How many times this tracker has already been auto-resumed by this
+    watchdog, counted from its own comment history via `RESUME_MARKER` --
+    no separate store needed, same trick as `covered_cutoff`. Used to
+    throttle further auto-resumes once a closed tracker's root cause is
+    already diagnosed and repeat instances are just more of the same
+    non-actionable evidence (DAN-339)."""
+    if issue is None:
+        return 0
+    try:
+        comments = api_get_fn(f"/api/issues/{issue['id']}/comments")
+        items = comments if isinstance(comments, list) else comments.get("comments", comments.get("data", []))
+    except Exception:
+        return 0
+    return sum(1 for c in items if RESUME_MARKER in (c.get("body") or ""))
 
 
-def dedupe_and_file(
-    client: PaperclipClient,
-    company_id: str,
-    project_id: str,
-    assignee_agent_id: str,
-    finding: SeatFinding,
-) -> str:
-    """File, update, resume, or note a finding's tracker. Returns the action taken."""
-    existing = client.find_tracker(company_id, finding.agent_id)
+# DAN-491 (closing the gap DAN-385 requirement 6 only half-closed): which
+# file_or_update_finding outcomes are worth minting/keeping a fresh per-tick
+# execution issue for, versus a quiet restatement against a tracker whose
+# own state a human can already read elsewhere. Only "filed" creates a
+# tracking issue a human has never seen before -- "updated" only adds a
+# comment to a tracker that is already open and already on someone's radar,
+# "resumed" only flips an already-known tracker's status back open (the
+# tracker itself carries the news, not this tick), and "noted_closed"
+# changes nothing at all. None of the latter three justify this tick's own
+# execution issue surviving as `done`; live evidence on DAN-491 (DAN-468,
+# DAN-482) showed "updated"/"resumed"-only ticks closing `done` with zero
+# new findings for a human to read.
+ACTIONABLE_ACTIONS = frozenset({"filed"})
+
+
+def is_actionable(action):
+    """True if `action` (file_or_update_finding's/predict_action's return)
+    should count toward this tick's own execution issue per DAN-491."""
+    return action in ACTIONABLE_ACTIONS
+
+
+def predict_action(company_id, finding, api_get_fn=api_get, recovered_at=None):
+    """What `file_or_update_finding` would do for `finding`, without
+    writing anything -- same decision logic, read-only. Lets `--dry-run
+    --file-findings` report accurate per-finding actions and the tick-level
+    ACTIONABLE signal before anything is actually posted.
+
+    DAN-526: when no tracker exists yet AND the seat has already succeeded
+    again since this streak ended (`recovered_at` is not None), do not file
+    a brand-new tracker at all -- filing is how this watchdog puts a live
+    incident in front of a human for the first time, and an incident that
+    is already over by the time it is discovered is not that. Only the
+    "no existing tracker" branch is affected: a streak that resumes or
+    updates an EXISTING tracker still does so (the tracker already has a
+    human's attention; the recovery info lands in the comment body via
+    `describe_finding`, not by suppressing the write)."""
+    existing = find_existing_finding_issue(company_id, finding["agentId"], api_get_fn)
     if existing is None:
-        client.create_tracker(
-            company_id,
-            project_id,
-            assignee_agent_id,
-            _tracker_title(finding.agent_id),
-            _finding_summary(finding),
-        )
+        if recovered_at is not None:
+            return "self_recovered_noted"
         return "filed"
-
-    if existing.get("status") not in ("done", "cancelled"):
-        client.comment(existing["id"], _finding_summary(finding))
+    if existing.get("status") in FINDING_OPEN_STATUSES:
         return "updated"
-
-    comments = client.list_comments(existing["id"])
-    already_resumed = any(RESUME_MARKER in (c.get("body") or "") for c in comments)
-    if not already_resumed:
-        client.resume(existing["id"], f"{RESUME_MARKER} {_finding_summary(finding)}")
-        return "resumed"
-
-    client.comment(existing["id"], f"Still happening (tracker already closed and previously resumed): {_finding_summary(finding)}")
-    return "noted_closed"
-
-
-def run_watchdog(
-    client: PaperclipClient,
-    company_id: str,
-    limit: int,
-    file_findings: bool,
-    project_id: Optional[str] = None,
-    assignee_agent_id: Optional[str] = None,
-) -> dict[str, Any]:
-    runs = client.list_recent_runs(company_id, limit)
-    findings = find_findings(runs)
-
-    report: dict[str, Any] = {"findings": [], "actionable": False}
-    for finding in findings:
-        row: dict[str, Any] = {
-            "agentId": finding.agent_id,
-            "streakLength": finding.streak_length,
-            "spanMinutes": round(finding.span_minutes, 1),
-        }
-        if file_findings:
-            assert project_id and assignee_agent_id, "--file-findings requires --project-id and --assignee-agent-id"
-            action = dedupe_and_file(client, company_id, project_id, assignee_agent_id, finding)
-            row["action"] = action
-            if action in ACTIONABLE_ACTIONS:
-                report["actionable"] = True
-        report["findings"].append(row)
-    return report
+    if count_prior_resumes(existing, api_get_fn) >= MAX_AUTO_RESUMES:
+        return "noted_closed"
+    if recovered_at is not None:
+        # DAN-526: this is the literal DAN-337 shape -- a closed tracker,
+        # genuinely-new-by-timestamp evidence, but the seat had ALREADY
+        # succeeded again before this tick ever ran. Flipping status back
+        # to `todo` for an incident that is already over is what produced
+        # the done -> todo -> done thrash a human had to escalate. Comment
+        # only; never resume status for an already-recovered streak.
+        return "self_recovered_not_resumed"
+    return "resumed"
 
 
-def _normalize_api_base(raw: str) -> str:
-    base = raw.rstrip("/")
-    if base.endswith("/api"):
-        base = base[: -len("/api")]
-    return base
+def file_or_update_finding(company_id, finding, names, project_id, assignee_agent_id,
+                            api_get_fn=api_get, api_post_fn=api_post, api_patch_fn=api_patch,
+                            window_stats=None, recovered_at=None, all_runs=None):
+    """Dedupe on the finding (the seat), not the run:
+      - an open tracking issue for this agentId gets an update comment;
+      - a CLOSED tracking issue for this agentId is resumed (`resume: true`,
+        reopened to `todo`) rather than a sibling filed -- reachable here
+        only when `filter_already_covered` has already proven the evidence
+        is genuinely new (past the closed tracker's high-water mark) -- but
+        only up to `MAX_AUTO_RESUMES` times; past that, the tracker has
+        already demonstrated its root cause is diagnosed-and-closed rather
+        than actually fixed, so further repeat instances are recorded as a
+        comment on the still-closed issue instead of thrashing its status
+        again (DAN-339 changes-requested round);
+      - a CLOSED tracking issue whose streak has ALREADY self-recovered by
+        emit time (DAN-526) gets a comment only -- status is never flipped
+        back to `todo` for an incident that is already over (this is the
+        literal DAN-337 done -> todo -> done thrash);
+      - a brand-new, already-self-recovered finding (DAN-526) is not filed
+        at all -- see `predict_action`;
+      - otherwise a new issue is filed, titled with the actual finding.
+    Returns (issue, "filed"|"updated"|"resumed"|"noted_closed"
+             |"self_recovered_noted"|"self_recovered_not_resumed"),
+    with `issue` None for "self_recovered_noted" since nothing is written.
+
+    DAN-531: whichever issue this call treats as canonical for the seat
+    (`existing` if one was found, else the one just filed) also gets
+    `reconcile_duplicate_trackers` run against it, merging down any OPEN
+    sibling a concurrent tick raced into existence for the same seat."""
+    body = describe_finding(finding, names, window_stats=window_stats, recovered_at=recovered_at, all_runs=all_runs)
+    existing = find_existing_finding_issue(company_id, finding["agentId"], api_get_fn)
+    action = predict_action(company_id, finding, api_get_fn, recovered_at=recovered_at)
+    if existing is not None:
+        reconcile_duplicate_trackers(company_id, finding["agentId"], existing, api_get_fn, api_patch_fn)
+        if action == "updated":
+            api_post_fn(f"/api/issues/{existing['id']}/comments", {"body": "## Update\n\n" + body})
+            return existing, "updated"
+        if action == "noted_closed":
+            api_post_fn(
+                f"/api/issues/{existing['id']}/comments",
+                {
+                    "body": "## New occurrence (tracker stays closed)\n\n" + body
+                    + f"\n\nThis tracker has already been auto-resumed {MAX_AUTO_RESUMES} "
+                    "time(s) for repeat instances of this same root cause. Recording this "
+                    "occurrence here without reopening status to avoid thrash; reopen "
+                    "manually if this needs fresh attention.",
+                },
+            )
+            return existing, "noted_closed"
+        if action == "self_recovered_not_resumed":
+            api_post_fn(
+                f"/api/issues/{existing['id']}/comments",
+                {
+                    "body": "## New occurrence (already self-recovered, not reopened)\n\n" + body
+                    + "\n\nNot reopening status: this seat already succeeded again before this "
+                    "tick ran, so the incident above is historical, not ongoing. Reopen manually "
+                    "if this needs fresh attention.",
+                },
+            )
+            return existing, "self_recovered_not_resumed"
+        api_patch_fn(
+            f"/api/issues/{existing['id']}",
+            {
+                "status": "todo",
+                "comment": RESUME_MARKER + "\n\n" + body,
+                "resume": True,
+            },
+        )
+        return existing, "resumed"
+
+    if action == "self_recovered_noted":
+        return None, "self_recovered_noted"
+
+    issue = api_post_fn(
+        f"/api/companies/{company_id}/issues",
+        {
+            "title": finding_title(finding, names, recovered_at=recovered_at),
+            "description": body,
+            "projectId": project_id,
+            "assigneeAgentId": assignee_agent_id,
+            "priority": "medium",
+            "status": "todo",
+        },
+    )
+    # DAN-531: a concurrent tick can file its own tracker for this seat in
+    # the gap between this tick's find_existing_finding_issue miss (above)
+    # and this POST landing. Re-check now that a write has happened -- if a
+    # race-created sibling is now visible, whichever of the two is
+    # earliest-created is canonical (may not be the one just filed above),
+    # and the other is closed as a duplicate.
+    canonical = find_existing_finding_issue(company_id, finding["agentId"], api_get_fn) or issue
+    reconcile_duplicate_trackers(company_id, finding["agentId"], canonical, api_get_fn, api_patch_fn)
+    return canonical, "filed"
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=300)
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--file-findings", action="store_true")
-    parser.add_argument("--project-id")
-    parser.add_argument("--assignee-agent-id")
-    parser.add_argument("--company-id", default=os.environ.get("PAPERCLIP_COMPANY_ID"))
-    parser.add_argument("--api-base", default=os.environ.get("PAPERCLIP_API_URL"))
-    args = parser.parse_args(argv)
-
-    if not args.company_id:
-        parser.error("--company-id is required (or set PAPERCLIP_COMPANY_ID)")
-    if not args.api_base:
-        parser.error("--api-base is required (or set PAPERCLIP_API_URL)")
-    if args.file_findings and not (args.project_id and args.assignee_agent_id):
+    parser.add_argument("--post-comment-on", help="Issue id to post a visibility comment on")
+    parser.add_argument("--dry-run", action="store_true", help="Print findings, never post")
+    parser.add_argument(
+        "--file-findings", action="store_true",
+        help="File-or-update a per-seat tracking issue for each finding (DAN-289)",
+    )
+    parser.add_argument("--project-id", help="Required with --file-findings")
+    parser.add_argument("--assignee-agent-id", help="Required with --file-findings; the watchdog's own owner")
+    args = parser.parse_args()
+    if args.file_findings and not args.dry_run and not (args.project_id and args.assignee_agent_id):
         parser.error("--file-findings requires --project-id and --assignee-agent-id")
 
-    api_key = os.environ.get("PAPERCLIP_API_KEY")
-    if not api_key:
-        parser.error("PAPERCLIP_API_KEY must be set in the environment")
+    company_id = os.environ["PAPERCLIP_COMPANY_ID"]
+    # DAN-526: keep the UNFILTERED fetch around. `filter_already_covered`
+    # drops runs this watchdog has already reported so streak detection
+    # can't requalify stale evidence -- exactly right for detection, but
+    # wrong as the source for "did this seat ever succeed in this window"
+    # or "has it recovered since". Both of those must see everything.
+    all_runs = api_get(f"/api/companies/{company_id}/heartbeat-runs?limit={args.limit}")
+    runs = filter_already_covered(all_runs, company_id)
+    findings = compute_findings(runs)
 
-    client = PaperclipClient(
-        _normalize_api_base(args.api_base), api_key, os.environ.get("PAPERCLIP_RUN_ID")
+    if not findings:
+        print("No qualifying bare-crash streaks found.")
+        return 0
+
+    names = agent_names(company_id)
+    enriched = [
+        (f, agent_window_stats(f["agentId"], all_runs), find_recovery(f, all_runs))
+        for f in findings
+    ]
+    body = "## Seat-health watchdog (narrow arm) -- visibility only\n\n" + "\n\n".join(
+        describe_finding(f, names, window_stats=ws, recovered_at=rec, all_runs=all_runs)
+        for f, ws, rec in enriched
     )
-    report = run_watchdog(
-        client,
-        args.company_id,
-        args.limit,
-        args.file_findings,
-        project_id=args.project_id,
-        assignee_agent_id=args.assignee_agent_id,
-    )
-    print(json.dumps(report, indent=2))
-    print(f"ACTIONABLE: {'yes' if report['actionable'] else 'no'}")
+    print(body)
+
+    if args.file_findings and not args.dry_run:
+        actions = []
+        for finding, window_stats, recovered_at in enriched:
+            issue, action = file_or_update_finding(
+                company_id, finding, names, args.project_id, args.assignee_agent_id,
+                window_stats=window_stats, recovered_at=recovered_at, all_runs=all_runs,
+            )
+            actions.append(action)
+            label = issue.get("identifier", issue.get("id")) if issue else "(no tracker filed)"
+            print(f"\n{action} {label} for seat {finding['agentId']}.")
+        print(f"\nACTIONABLE: {'yes' if any(is_actionable(a) for a in actions) else 'no'}")
+    elif args.file_findings:
+        actions = []
+        for finding, window_stats, recovered_at in enriched:
+            action = predict_action(company_id, finding, recovered_at=recovered_at)
+            actions.append(action)
+            print(
+                f"\n[dry-run] would {action} tracking issue titled: "
+                f"{finding_title(finding, names, recovered_at=recovered_at)}"
+            )
+        print(f"\nACTIONABLE: {'yes' if any(is_actionable(a) for a in actions) else 'no'}")
+
+    if args.post_comment_on and not args.dry_run:
+        api_post(f"/api/issues/{args.post_comment_on}/comments", {"body": body})
+        print(f"\nPosted visibility comment on {args.post_comment_on}.")
+
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

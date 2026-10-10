@@ -457,6 +457,20 @@ def stylesheet(mode):
             color: {ink_100};
             background: transparent;
     }}
+    /* Review's "MATCH 1 OF 3" row: a hairline box around a mono-caps label
+       and the two boxed steppers (sized in widgets.icon_button). */
+    QFrame#MatchNav {{
+            background: transparent;
+            border: 1px solid {ink_46};
+    }}
+    QLabel#MatchLabel {{
+            font-family: {font_mono};
+            font-size: 11px;
+            font-weight: 700;
+            color: {ink_100};
+            background: transparent;
+            border: none;
+    }}
     QLabel#ReadoutLabel {{
             font-family: {font_mono};
             font-size: 11px;
@@ -803,6 +817,10 @@ def stylesheet(mode):
             color: {stamp_fg};
     }}
     QListWidget::item:hover:!selected {{ background: {card}; }}
+    /* Review's tag list: rows are drawn and sized by TagRowDelegate (32px,
+       hairline rule), so the frame adds no padding of its own. */
+    QListWidget#TagList {{ padding: 0; }}
+    QListWidget#TagList::item {{ padding: 0; }}
 
     /* ---- progress ---- */
     QProgressBar {{

@@ -1,244 +1,236 @@
-"""Routine-agnostic tick finalizer (DAN-289, DAN-385 requirement 6).
+#!/usr/bin/env python3
+"""Tick finalizer for routines moving to report-on-exception -- DAN-289.
 
-Closes out one routine tick's own execution issue along exactly one of two
-paths:
+DAN-289's complaint is not about the two watchdog arms' own finding logic
+(seat_watchdog.py and stranded_review.py are already exception-only: they
+dedupe/update rather than re-announce). It is about the routine's OWN
+per-tick execution issue -- the platform creates one of these every time the
+schedule fires, and up to now this run's own issue got marked `done` with a
+"nothing found" comment on every single clean tick, 16 times in 7 hours for
+the narrow-arm seat-health routine alone. That is 16 rows a human has to
+scroll past to find the one tick that mattered.
 
-* `--clean`: nothing actionable happened this tick (no findings at all, or
-  every finding was a restatement of something already known -- DAN-385's
-  restated-only extension of the clean path). Appends one timestamped line
-  to a single persistent rolling-log issue (found once by a stable title
-  marker + assignee, created once if it doesn't exist yet, reused forever
-  after -- never a new issue on a clean or restated-only tick), then marks
-  THIS tick's own issue `cancelled` (not `done`) with a pointer comment.
-  `cancelled`, not `done`, so an empty or restated-only tick never inflates
-  completion counts (DAN-289: "14 of Dante's 20 completions" were empty
-  watchdog ticks before this existed).
-* `--exception-summary`: real, new-to-a-human work happened this tick.
-  Marks THIS tick's own issue `done` with the given one-line summary as
-  the closing comment.
+This script decides what happens to THIS tick's own execution issue, given
+whether either arm found anything:
 
-Deliberately routine-agnostic (no seat-watchdog-specific text anywhere in
-this module) so any other routine with the same "report on exception, stay
-quiet otherwise" shape can adopt it unchanged -- the rolling-log marker,
-routine label, and assignee are all caller-supplied.
+  - Clean (no findings anywhere this tick): append one timestamped line to a
+    single persistent "rolling log" issue (found by a stable marker in its
+    title, created once, left open indefinitely -- never marked done by this
+    script), then mark THIS tick's own issue `cancelled` (not `done`) with a
+    one-line pointer. `cancelled`, not `done`, so a clean tick stops
+    inflating completion counts -- that metric is literally what tipped
+    DAN-289 off ("14 of Dante's 20 completions" were empty watchdog ticks).
 
-The timestamp-prefixed comment format appended on the clean path
-(`<ISO-8601>: <note>`) is load-bearing: the seat-health watchdog's own
-dead-man-switch step (DAN-720) scans the rolling log for the most recent
-comment matching exactly this pattern to find the last time a tick
-actually reached its arms, deliberately NOT trusting the issue's bare
-"most recent comment" (an incidental human/agent comment would reset that
-clock without a real tick ever running). Do not change this format without
-checking every reader of it.
+  - Exception (something was found): mark THIS tick's own issue `done`. Real
+    work happened this tick -- a per-seat or per-review finding was filed or
+    updated elsewhere (that filing/update is each arm's own job, not this
+    script's). This script only applies the tick-level status.
+
+DAN-385 requirement 6: "something was found" is not by itself grounds for
+`done` -- a finding that is a pure restatement of an already-open,
+already-reported finding (each arm's own `ACTIONABLE: no` signal) belongs
+in the Clean path too, so it does not also mint a fresh execution issue for
+information that is already on record elsewhere. Callers pass `--clean
+--note "..."` for that case so the rolling log still records the tick and
+can say *why* (restated vs. truly empty) without a status flip either way.
+
+This script never changes any OTHER issue's status and never escalates --
+same visibility-only posture as both arms. It is deliberately agent/routine
+agnostic (no seat-health- or approval-sweep-specific logic) so the
+Default-approver gate sweep routine can adopt the identical pattern.
+
+Usage:
+  PAPERCLIP_API_KEY=... PAPERCLIP_API_URL=... PAPERCLIP_COMPANY_ID=... \
+      python3 ops/tick_finalize.py --this-issue-id ID --project-id PID \
+      --assignee-agent-id AID --rolling-log-marker "Seat-health watchdog -- rolling log" \
+      --routine-label "Seat-health watchdog (narrow arm)" \
+      (--clean | --exception-summary "...") [--dry-run]
+
+Exit code is always 0.
 """
-
-from __future__ import annotations
-
 import argparse
 import json
 import os
-import re
-import urllib.parse
+import sys
 import urllib.request
 from datetime import datetime, timezone
-from typing import Any, Optional
-
-ROLLING_LOG_COMMENT_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}): ")
-
-DEFAULT_CLEAN_NOTE = "clean -- no findings this tick"
+from urllib.parse import quote
 
 
-def clean_note(note: Optional[str], now: Optional[datetime] = None) -> str:
-    """The exact `<ISO-8601>: <note>` line appended to the rolling log."""
-    now = now or datetime.now(timezone.utc)
-    timestamp = now.isoformat().replace("+00:00", "Z")
-    return f"{timestamp}: {note or DEFAULT_CLEAN_NOTE}"
-
-
-def is_rolling_log_line(body: Optional[str]) -> bool:
-    """True iff `body` matches the exact tick_finalize.py append pattern.
-
-    Used by callers (e.g. the seat-health watchdog's dead-man switch) that
-    must find the last REAL tick, not merely the issue's most recent
-    comment -- an incidental status fix or question would otherwise reset
-    the clock without a tick ever reaching its arms.
-    """
-    return bool(body) and bool(ROLLING_LOG_COMMENT_PATTERN.match(body or ""))
-
-
-def most_recent_rolling_log_line(comments: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
-    candidates = [c for c in comments if is_rolling_log_line(c.get("body"))]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda c: c.get("createdAt") or "")
-
-
-class PaperclipClient:
-    """Thin HTTP wrapper around the Paperclip issues API."""
-
-    def __init__(self, api_base: str, api_key: str, run_id: Optional[str] = None) -> None:
-        self.api_base = api_base.rstrip("/")
-        self.api_key = api_key
-        self.run_id = run_id
-
-    def _request(self, method: str, path: str, body: Optional[dict[str, Any]] = None) -> Any:
-        url = f"{self.api_base}{path}"
-        data = json.dumps(body).encode() if body is not None else None
-        req = urllib.request.Request(url, data=data, method=method)
-        req.add_header("Authorization", f"Bearer {self.api_key}")
-        req.add_header("Content-Type", "application/json")
-        if self.run_id:
-            req.add_header("X-Paperclip-Run-Id", self.run_id)
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode())
-
-    def search_issues_by_text(self, company_id: str, text: str, limit: int = 50) -> list[dict[str, Any]]:
-        path = f"/api/companies/{company_id}/issues?q={urllib.parse.quote(text)}&limit={limit}"
-        result = self._request("GET", path)
-        return result.get("issues", []) if isinstance(result, dict) else result
-
-    def create_issue(
-        self, company_id: str, project_id: str, assignee_agent_id: str, title: str, description: str
-    ) -> dict[str, Any]:
-        return self._request(
-            "POST",
-            f"/api/companies/{company_id}/issues",
-            {
-                "title": title,
-                "description": description,
-                "projectId": project_id,
-                "assigneeAgentId": assignee_agent_id,
-            },
-        )
-
-    def list_comments(self, issue_id: str) -> list[dict[str, Any]]:
-        result = self._request("GET", f"/api/issues/{issue_id}/comments")
-        return result.get("comments", []) if isinstance(result, dict) else result
-
-    def comment(self, issue_id: str, body: str) -> Any:
-        return self._request("POST", f"/api/issues/{issue_id}/comments", {"body": body})
-
-    def set_status(self, issue_id: str, status: str, comment: str) -> Any:
-        return self._request("PATCH", f"/api/issues/{issue_id}", {"status": status, "comment": comment})
-
-
-def find_rolling_log(
-    client: PaperclipClient, company_id: str, marker: str, assignee_agent_id: str
-) -> Optional[dict[str, Any]]:
-    """Find the persistent rolling-log issue by title marker + assignee.
-
-    Independent of status -- the log issue's own status has been observed
-    wrong (DAN-720 found it sitting at `blocked` with zero real blockers),
-    and a status-filtered lookup would silently miss it and mint a
-    duplicate.
-    """
-    for issue in client.search_issues_by_text(company_id, marker):
-        if marker in (issue.get("title") or "") and issue.get("assigneeAgentId") == assignee_agent_id:
-            return issue
-    return None
-
-
-def find_or_create_rolling_log(
-    client: PaperclipClient,
-    company_id: str,
-    project_id: str,
-    assignee_agent_id: str,
-    marker: str,
-    routine_label: str,
-) -> dict[str, Any]:
-    existing = find_rolling_log(client, company_id, marker, assignee_agent_id)
-    if existing is not None:
-        return existing
-    return client.create_issue(
-        company_id,
-        project_id,
-        assignee_agent_id,
-        marker,
-        f"Persistent rolling log for {routine_label}. One timestamped line is appended per "
-        "clean or restated-only tick; never closed, never duplicated -- see ops/tick_finalize.py.",
-    )
-
-
-def finalize_clean(
-    client: PaperclipClient,
-    company_id: str,
-    this_issue_id: str,
-    project_id: str,
-    assignee_agent_id: str,
-    rolling_log_marker: str,
-    routine_label: str,
-    note: Optional[str] = None,
-    now: Optional[datetime] = None,
-) -> dict[str, Any]:
-    rolling_log = find_or_create_rolling_log(
-        client, company_id, project_id, assignee_agent_id, rolling_log_marker, routine_label
-    )
-    client.comment(rolling_log["id"], clean_note(note, now))
-    pointer = f"Clean tick ({routine_label}) -- logged on {rolling_log.get('identifier', rolling_log['id'])}."
-    client.set_status(this_issue_id, "cancelled", pointer)
-    return {"path": "clean", "rollingLogIssueId": rolling_log["id"], "status": "cancelled"}
-
-
-def finalize_exception(client: PaperclipClient, this_issue_id: str, exception_summary: str) -> dict[str, Any]:
-    client.set_status(this_issue_id, "done", exception_summary)
-    return {"path": "exception", "status": "done"}
-
-
-def _normalize_api_base(raw: str) -> str:
-    base = raw.rstrip("/")
+def api_get(path):
+    base = os.environ["PAPERCLIP_API_URL"].rstrip("/")
     if base.endswith("/api"):
         base = base[: -len("/api")]
-    return base
+    req = urllib.request.Request(
+        base + path,
+        headers={"Authorization": "Bearer " + os.environ["PAPERCLIP_API_KEY"]},
+    )
+    with urllib.request.urlopen(req) as resp:
+        return json.load(resp)
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def _api_write(path, body, method):
+    base = os.environ["PAPERCLIP_API_URL"].rstrip("/")
+    if base.endswith("/api"):
+        base = base[: -len("/api")]
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        base + path,
+        data=data,
+        method=method,
+        headers={
+            "Authorization": "Bearer " + os.environ["PAPERCLIP_API_KEY"],
+            "Content-Type": "application/json",
+            "X-Paperclip-Run-Id": os.environ.get("PAPERCLIP_RUN_ID", ""),
+        },
+    )
+    with urllib.request.urlopen(req) as resp:
+        return json.load(resp)
+
+
+def api_post(path, body):
+    return _api_write(path, body, "POST")
+
+
+def api_patch(path, body):
+    return _api_write(path, body, "PATCH")
+
+
+def is_rolling_log(issue, marker):
+    """Matched on an exact marker substring in the title -- deliberately not
+    fuzzy, so an unrelated issue that happens to mention the routine's name
+    in passing can never be mistaken for the rolling log."""
+    return marker in (issue.get("title") or "")
+
+
+def find_rolling_log(company_id, marker, assignee_agent_id, api_get_fn=api_get):
+    """DAN-720: do NOT filter by status. The rolling log is meant to stay
+    `in_progress` forever, but Paperclip's own disposition-handoff check has
+    been observed force-flipping it to `blocked` within seconds of any PATCH
+    that sets it back to `in_progress` -- "Paperclip could not resolve this
+    issue's missing disposition automatically" -- because a permanent,
+    never-`done` log issue with no blocker/interaction/monitor doesn't look
+    like a live continuation path to that heuristic. A status-filtered
+    lookup intermittently misses the real rolling log and mints a duplicate
+    (this happened for real on DAN-720: DAN-391 flipped to `blocked` and the
+    very next clean tick created DAN-726 as a second rolling log). Matching
+    on the marker+assignee alone, across every status, is what the marker
+    was already designed to make safe (`is_rolling_log`'s docstring: "an
+    unrelated issue ... can never be mistaken for the rolling log").
+    If more than one match turns up (e.g. a duplicate already minted before
+    this fix landed), prefer the oldest -- that is the original log all the
+    historical entries live on, never a fresh duplicate.
+
+    DAN-789: the plain `assigneeAgentId&limit=100` listing used here was
+    itself unreliable once more than ~100 issues were assigned to this
+    agent -- the endpoint's default order is not createdAt/updatedAt
+    monotonic, so a dormant old issue (the real rolling log) can fall
+    outside the window while still inside the overall date range, and the
+    very bug this function's docstring describes (DAN-720: DAN-391 missed,
+    DAN-726 minted as a duplicate) reproduced again for real on 2026-10-07
+    (DAN-391 missed, DAN-792 minted). Adding `q=<marker>` scopes the search
+    to title-relevance instead of recency, which reliably surfaces a
+    years-old marker-matching issue regardless of how many newer issues
+    exist; `assigneeAgentId` and the `is_rolling_log` marker check below
+    still guard against a false-positive relevance match."""
+    listing = api_get_fn(
+        f"/api/companies/{company_id}/issues"
+        f"?q={quote(marker)}&assigneeAgentId={assignee_agent_id}&limit=100"
+    )
+    items = listing if isinstance(listing, list) else listing.get("issues", listing.get("data", []))
+    matches = [item for item in items if is_rolling_log(item, marker)]
+    if not matches:
+        return None
+    matches.sort(key=lambda item: item.get("createdAt") or "")
+    return matches[0]
+
+
+def ensure_rolling_log(company_id, marker, routine_label, project_id, assignee_agent_id,
+                        api_get_fn=api_get, api_post_fn=api_post):
+    existing = find_rolling_log(company_id, marker, assignee_agent_id, api_get_fn)
+    if existing is not None:
+        return existing, False
+    created = api_post_fn(
+        f"/api/companies/{company_id}/issues",
+        {
+            "title": marker,
+            "description": (
+                f"Rolling status log for **{routine_label}** (report-on-exception, DAN-289). "
+                "Clean ticks append a line here instead of minting a new issue. "
+                "This issue is intentionally left open indefinitely -- it is not a stuck task, "
+                "and its own age is not a finding."
+            ),
+            "projectId": project_id,
+            "assigneeAgentId": assignee_agent_id,
+            "priority": "low",
+            "status": "in_progress",
+        },
+    )
+    return created, True
+
+
+def clean_note(now, detail=None):
+    """DAN-385 requirement 6: `--clean` now also covers a tick whose only
+    findings are restatements of an already-open/already-reported finding
+    (no new execution issue warranted, same as a truly empty tick) -- an
+    optional `detail` overrides the default text so the rolling log can
+    still distinguish the two cases."""
+    return f"{now.isoformat()}: {detail or 'clean -- no qualifying findings this tick.'}"
+
+
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--this-issue-id", required=True)
-    parser.add_argument("--clean", action="store_true")
-    parser.add_argument("--exception-summary")
+    parser.add_argument("--company-id", default=os.environ.get("PAPERCLIP_COMPANY_ID"))
     parser.add_argument("--project-id")
     parser.add_argument("--assignee-agent-id")
     parser.add_argument("--rolling-log-marker")
-    parser.add_argument("--routine-label")
-    parser.add_argument("--note")
-    parser.add_argument("--company-id", default=os.environ.get("PAPERCLIP_COMPANY_ID"))
-    parser.add_argument("--api-base", default=os.environ.get("PAPERCLIP_API_URL"))
-    args = parser.parse_args(argv)
-
-    if bool(args.clean) == bool(args.exception_summary):
-        parser.error("exactly one of --clean or --exception-summary is required")
-    if args.clean and not (args.project_id and args.assignee_agent_id and args.rolling_log_marker and args.routine_label):
-        parser.error("--clean requires --project-id, --assignee-agent-id, --rolling-log-marker, and --routine-label")
-    if not args.company_id:
-        parser.error("--company-id is required (or set PAPERCLIP_COMPANY_ID)")
-    if not args.api_base:
-        parser.error("--api-base is required (or set PAPERCLIP_API_URL)")
-
-    api_key = os.environ.get("PAPERCLIP_API_KEY")
-    if not api_key:
-        parser.error("PAPERCLIP_API_KEY must be set in the environment")
-
-    client = PaperclipClient(
-        _normalize_api_base(args.api_base), api_key, os.environ.get("PAPERCLIP_RUN_ID")
+    parser.add_argument("--routine-label", default="")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--clean", action="store_true")
+    group.add_argument("--exception-summary", help="One-line summary of what was found/filed this tick")
+    parser.add_argument(
+        "--note",
+        help="Override the default rolling-log line for --clean (DAN-385: e.g. "
+        "'restated-only -- no new/changed findings, see DAN-NNN' for a tick whose "
+        "only findings were already-reported repeats)",
     )
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+
+    now = datetime.now(timezone.utc)
 
     if args.clean:
-        result = finalize_clean(
-            client,
-            args.company_id,
-            args.this_issue_id,
-            args.project_id,
-            args.assignee_agent_id,
-            args.rolling_log_marker,
-            args.routine_label,
-            note=args.note,
+        if not (args.project_id and args.assignee_agent_id and args.rolling_log_marker):
+            parser.error("--clean requires --project-id, --assignee-agent-id, and --rolling-log-marker")
+        note = clean_note(now, args.note)
+        if args.dry_run:
+            print(f"[dry-run] would append to rolling log '{args.rolling_log_marker}': {note}")
+            print(f"[dry-run] would mark {args.this_issue_id} cancelled")
+            return 0
+        log_issue, created = ensure_rolling_log(
+            args.company_id, args.rolling_log_marker, args.routine_label,
+            args.project_id, args.assignee_agent_id,
         )
+        api_post(f"/api/issues/{log_issue['id']}/comments", {"body": note})
+        log_link = f"/DAN/issues/{log_issue.get('identifier', log_issue['id'])}"
+        api_patch(
+            f"/api/issues/{args.this_issue_id}",
+            {"status": "cancelled", "comment": f"Clean tick -- logged on [rolling log]({log_link})."},
+        )
+        print(f"{'Created' if created else 'Reused'} rolling log {log_link}; appended clean note; "
+              f"cancelled {args.this_issue_id}.")
     else:
-        result = finalize_exception(client, args.this_issue_id, args.exception_summary)
-
-    print(json.dumps(result, indent=2))
+        if args.dry_run:
+            print(f"[dry-run] would mark {args.this_issue_id} done: {args.exception_summary}")
+            return 0
+        api_patch(
+            f"/api/issues/{args.this_issue_id}",
+            {"status": "done", "comment": args.exception_summary},
+        )
+        print(f"Exception tick: marked {args.this_issue_id} done.")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
