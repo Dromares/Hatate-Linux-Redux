@@ -177,6 +177,15 @@ def screen_title(text):
     return label
 
 
+def display_title(text):
+    """A headline in the screen-title face and size that is not a screen's
+    own title - the empty Queue's "Drop images here." (E-01). Kept apart
+    from `screen_title` so "the first thing on a page" stays countable."""
+    label = QLabel(text)
+    label.setObjectName('DisplayTitle')
+    return label
+
+
 def muted(text=''):
     label = QLabel(text)
     label.setObjectName('Muted')
