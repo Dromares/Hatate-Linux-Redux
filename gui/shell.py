@@ -28,6 +28,8 @@ workers, the shortcut handlers and a 4,800-line smoke test all reach for
 these by name, and a redesign that renames them would be a rewrite
 wearing a redesign's clothes.
 """
+import re
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QHBoxLayout, QLabel, QProgressBar, QSizePolicy, QStackedWidget,
@@ -38,6 +40,87 @@ from core.applog import get_logger
 from gui import widgets
 
 log = get_logger("gui.shell")
+
+# The mockup's run strip is 220px of gauge and a hairline of line
+# (tokens.css `.run-strip__track` is 3px; the gap register's R-02 asks 2).
+GAUGE_WIDTH = 220
+GAUGE_HEIGHT = 2
+
+# What the strip says when no run has anything to report (R-05).
+IDLE_PROGRESS = "nothing queued"
+IDLE_ETA = "ETA —"
+
+# A "figure" in a readout: the part the mockup sets in bold (`<b>7/8</b>
+# searched`, `waiting <b>38s</b>`, `ETA <b>~2 min</b>`). A number with the
+# punctuation and unit that travel with it - "1,234/24,000", "~16d", "38s",
+# "14:20".
+_FIGURE = re.compile(r"~?\d[\d,.:/]*[A-Za-z]*")
+
+
+def split_figures(text):
+    """`text` as [(fragment, is_figure), ...], in order, losing nothing."""
+    out = []
+    at = 0
+    for hit in _FIGURE.finditer(text):
+        if hit.start() > at:
+            out.append((text[at:hit.start()], False))
+        out.append((hit.group(), True))
+        at = hit.end()
+    if at < len(text):
+        out.append((text[at:], False))
+    return out
+
+
+class Readout(QWidget):
+    """One `label  FIGURE  label` reading in the run strip.
+
+    The mockup sets the figures bold and bright against dim mono labels.
+    A QLabel can only do that with inline rich-text colours, which would
+    pin the colour to one theme; so each run of text is its own QLabel
+    and the stylesheet (`RunReadout` / `RunFigure`) colours them.
+
+    It answers to the QLabel calls the rest of the window already makes:
+    `setText`, `text`, `setToolTip`. `text()` is the plain string, not
+    markup - the figures are a presentation of it, never part of it.
+    """
+
+    def __init__(self, text=''):
+        super().__init__()
+        self.setObjectName('RunReadoutGroup')
+        self._plain = None
+        self._parts = []
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+        self.setText(text)
+
+    def text(self):
+        return self._plain
+
+    def setText(self, text):
+        text = text or ''
+        if text == self._plain:
+            return
+        self._plain = text
+        for part in self._parts:
+            # Detached now, not just scheduled for deletion: until the event
+            # loop runs deleteLater the old text would still paint, under
+            # the new.
+            self._layout.removeWidget(part)
+            part.hide()
+            part.setParent(None)
+            part.deleteLater()
+        self._parts = []
+        for fragment, is_figure in split_figures(text):
+            label = QLabel(fragment)
+            label.setObjectName('RunFigure' if is_figure else 'RunReadout')
+            widgets.apply_tracking(label, 0.08)
+            self._layout.addWidget(label)
+            self._parts.append(label)
+        self.setAccessibleName(text)
+        # An empty reading takes no room, so the strip's spacing does not
+        # leave a gap where it was.
+        self.setVisible(bool(text))
 
 
 class _ModeStack(QStackedWidget):
@@ -170,7 +253,13 @@ class ShellMixin:
         return mark
 
     def _build_run_strip(self):
-        """Everything about a run, in one line, visible from every mode."""
+        """Everything about a run, in one line, visible from every mode.
+
+        Left to right, as the mockup has it: `00 // RUN`, the gauge, then
+        `searched`, `sent`, `waiting`, the SauceNAO quota - and, alone on
+        the right edge, the ETA. The ETA is the answer to "will it finish
+        tonight?", so it takes the position that is read second.
+        """
         card, layout = widgets.card()
         layout.setContentsMargins(18, 12, 18, 12)
         self.run_strip = card
@@ -178,32 +267,45 @@ class ShellMixin:
         row = QHBoxLayout()
         row.setSpacing(16)
 
-        # Given a fixed width rather than the whole row: stretched across
-        # the window an empty bar reads as a run sitting at 0%, when what
-        # it means is that nothing is running. At this width it reads as
-        # the gauge it is, and the labels beside it carry the sentence.
+        self.run_tag = widgets.section_label("00 // Run")
+        row.addWidget(self.run_tag)
+
+        # A fixed width rather than the whole row: stretched across the
+        # window an empty gauge reads as a run sitting at 0%, when what it
+        # means is that nothing is running. 2px tall, with a track the eye
+        # can find (`RunGauge` in the stylesheet) - the old 20px bar's
+        # track was 1.08:1 against the strip, an empty black slab.
         self.progress_bar = QProgressBar()
+        self.progress_bar.setObjectName('RunGauge')
         self.progress_bar.setTextVisible(False)
-        self.progress_bar.setFixedWidth(240)
+        self.progress_bar.setFixedSize(GAUGE_WIDTH, GAUGE_HEIGHT)
         self.progress_bar.setSizePolicy(
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed,
         )
-        row.addWidget(self.progress_bar)
+        row.addWidget(self.progress_bar, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        # Kept as separate labels, with the names they have always had,
+        # Kept as separate readouts, with the names they have always had,
         # because each is refreshed by its own handler on its own signal.
-        self.run_progress_label = widgets.muted()
+        # The gauge means SEARCHED, so the count beside it is `n/m
+        # searched`; what has gone to Hydrus is a different number
+        # (`sent_count_label`) and is not what the gauge draws (R-04).
+        self.run_progress_label = Readout()
         self.run_progress_label.setToolTip(
-            "How far through the run, and how much longer it has to go at the pace "
-            "measured so far. A search is paced at 45-75s an image by default, so this "
-            "is the estimate that says whether a batch finishes tonight or next week.\n\n"
-            "The pace is averaged over the whole run. Images served from the search "
-            "cache cost almost nothing, so a batch with many of them finishes sooner "
-            "than the delay alone would suggest, and the estimate follows as it learns."
+            "How far through the run: images searched out of the images in this run. "
+            "This is what the gauge to the left draws. It is not the number sent to "
+            "Hydrus, which is counted separately."
         )
         row.addWidget(self.run_progress_label)
 
-        self.wait_countdown_label = widgets.muted()
+        self.sent_count_label = Readout()
+        self.sent_count_label.setToolTip(
+            "How many images in the list have been sent to Hydrus. Counts images "
+            "Hydrus acknowledged holding; anything still queued with Hydrus's own "
+            "downloader is shown separately until it's confirmed."
+        )
+        row.addWidget(self.sent_count_label)
+
+        self.wait_countdown_label = Readout()
         self.wait_countdown_label.setToolTip(
             "Live countdown for whatever the app is currently waiting on - the rate-limit "
             "delay between searches, or confirming a Hydrus URL-importer download during "
@@ -211,17 +313,26 @@ class ShellMixin:
         )
         row.addWidget(self.wait_countdown_label)
 
-        self.saucenao_quota_label = widgets.muted()
+        self.saucenao_quota_label = Readout()
         row.addWidget(self.saucenao_quota_label)
 
-        self.sent_count_label = widgets.muted()
-        self.sent_count_label.setToolTip(
-            "How many images in the list have been sent to Hydrus. Counts images "
-            "Hydrus acknowledged holding; anything still queued with Hydrus's own "
-            "downloader is shown separately until it's confirmed."
-        )
-        row.addWidget(self.sent_count_label)
         row.addStretch(1)
+
+        self.run_eta_label = Readout()
+        self.run_eta_label.setToolTip(
+            "How much longer the run has to go at the pace measured so far. A search is "
+            "paced at 45-75s an image by default, so this is the estimate that says "
+            "whether a batch finishes tonight or next week.\n\n"
+            "The pace is averaged over the whole run. Images served from the search "
+            "cache cost almost nothing, so a batch with many of them finishes sooner "
+            "than the delay alone would suggest, and the estimate follows as it learns."
+        )
+        row.addWidget(self.run_eta_label)
+
+        # Never blank: an idle strip says so (R-05). The window overwrites
+        # these as soon as there is anything to say.
+        self.run_progress_label.setText(IDLE_PROGRESS)
+        self.run_eta_label.setText(IDLE_ETA)
 
         layout.addLayout(row)
         return card
