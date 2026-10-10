@@ -60,7 +60,10 @@ from core.viewport import entries_needing_thumbnails, visible_range_with_buffer
 from core.tag_colors import get_tag_color
 from core.tag_rules import apply_inline_edit
 from gui import theme, widgets
-from gui.shell import EMPTY_GHOST_GLYPH, IDLE_ETA, IDLE_PROGRESS, RUN_FAILED_NOTE, ShellMixin
+from gui.shell import (
+    EMPTY_GHOST_GLYPH, IDLE_ETA, IDLE_PROGRESS, QUOTA_PAUSED_ETA, QUOTA_PAUSED_NOTE,
+    RUN_FAILED_NOTE, ShellMixin,
+)
 from gui.review_view import ReviewViewMixin
 from gui.activity_view import ActivityViewMixin
 from gui.table_delegates import RuledRowDelegate, ChipDelegate
@@ -212,6 +215,38 @@ def _interrupted_prose(entries) -> str:
     return (
         "Hatate did not exit cleanly during this run. Everything up to the "
         f"last autosave is safe. {counts}."
+    )
+
+
+def _is_waiting_review(entry) -> bool:
+    """Decided and still waiting on the user: a match was found and the
+    row is neither sent nor marked reviewed."""
+    return entry.needs_review and entry.status in (MatchStatus.GOOD, MatchStatus.POOR)
+
+
+def _waiting_review_count(entries) -> int:
+    return sum(1 for e in entries if _is_waiting_review(e))
+
+
+def _quota_pause_prose(entries, remaining: int) -> str:
+    """Why the run stopped, with the counts that say nothing was lost
+    (S-03). The categories are `_interrupted_prose`'s. `remaining` is the
+    worker's own figure and stands in when there is no list to count (a
+    pause read back after a launch that did not restore the session)."""
+    why = ("Hatate stopped here on purpose, rather than finish the batch with "
+           "weaker matches from the other engines.")
+    if not entries:
+        return (f"{why} {_plural(remaining, 'image')} {'is' if remaining == 1 else 'are'} "
+                "untouched until you resume.")
+    sent = sum(1 for e in entries if e.sent_to_hydrus)
+    waiting = _waiting_review_count(entries)
+    untouched = sum(1 for e in entries if e.status == MatchStatus.NOT_SEARCHED)
+    return (
+        f"{why} {sent} of {_plural(len(entries), 'image')} "
+        f"{'is' if len(entries) == 1 else 'are'} already sent, "
+        f"{waiting} {'is' if waiting == 1 else 'are'} waiting on your review, and "
+        f"{untouched} {'is' if untouched == 1 else 'are'} untouched until you resume. "
+        "Nothing was lost."
     )
 
 
@@ -424,6 +459,8 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         # left" for a run that is no longer moving would be a lie.
         self._run_estimate = RunEstimate()
         self._run_active = False
+        # True from a quota pause until the next search starts (DAN-1167).
+        self._quota_paused = False
         # True once a run has put a count on the strip. Until then the strip
         # follows the list ("nothing queued" / "N not searched").
         self._run_counted = False
@@ -520,6 +557,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
             self.status_label.setText(f"{self._session_restore_status} · {quota_text}")
         else:
             self.status_label.setText(quota_text)
+        self._show_quota_banner(state.paused_at, state.remaining, reset_at)
 
     # ------------------------------------------------------------------
     # Menu
@@ -787,6 +825,17 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         banner_parts['crash_log_button'].clicked.connect(self._open_crash_log)
         banner_parts['discard_label'].clicked.connect(self.action_clear_session)
         card_layout.addWidget(self.run_banner)
+
+        # Hidden until a search pauses on SauceNAO's daily quota, or a pause
+        # from a previous visit is read back (DAN-1167, S-03). It replaces
+        # the modal that used to say this: an unattended run must not wait
+        # on a click, and a banner is still there on relaunch.
+        self.quota_banner, quota_parts = widgets.quota_pause_banner()
+        self.quota_banner.setVisible(False)
+        self._quota_banner_parts = quota_parts
+        quota_parts['review_button'].clicked.connect(self._review_the_waiting)
+        quota_parts['continue_button'].clicked.connect(self._resume_without_saucenao)
+        card_layout.addWidget(self.quota_banner)
 
         # The model is built before anything that reads it - the filter
         # bar sets its initial state from the model's counts, so it has to
@@ -1894,6 +1943,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         self._local_pixmap_cache.clear()
         clear_session()
         self.run_note_label.setText("")
+        self._hide_quota_banner()
         self._refresh_table()
         self._update_preview(None)
         self._refresh_tag_list(None)
@@ -2263,9 +2313,12 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         """
         done = self.progress_bar.value()
         total = self.progress_bar.maximum()
+        # A run paused on the quota is not idle and is not finishing: the
+        # estimate would be a lie either way (S-04).
+        paused_eta = QUOTA_PAUSED_ETA if self._quota_paused else IDLE_ETA
         if total <= 0 or (done <= 0 and not self._run_active):
             self.run_progress_label.setText(self._idle_run_text())
-            self.run_eta_label.setText(IDLE_ETA)
+            self.run_eta_label.setText(paused_eta)
             return
         self._run_counted = True
         self.run_progress_label.setText(f"{done:,}/{total:,} searched")
@@ -2277,7 +2330,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
                 eta += f" · {finish}"
             self.run_eta_label.setText(eta)
         else:
-            self.run_eta_label.setText(IDLE_ETA)
+            self.run_eta_label.setText(paused_eta)
 
     def _idle_run_text(self):
         """What the strip's count says when no run is under way.
@@ -2382,29 +2435,66 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
             f"Paused: SauceNAO daily quota exhausted{used} - "
             f"{searched} searched, {remaining} left unsearched"
         )
-        box = message.build(self)
-        box.setIcon(QMessageBox.Icon.Information)
-        box.setWindowTitle("SauceNAO quota exhausted")
-        box.setText(
-            f"SauceNAO's daily search allowance is spent{used}, so searching paused after "
-            f"{searched} image(s).\n\n"
-            f"The remaining {remaining} image(s) were left unsearched - press Start Search "
-            "again once the quota resets and it'll carry on from here.\n\n"
-            "Or continue right now without SauceNAO: the remaining images are searched with "
-            "the other engines, marked Provisional, and re-searchable once the allowance "
-            "resets - the same thing \"carry on without SauceNAO\" in Settings > SauceNAO "
-            "does for future runs, just for this one without reopening Settings (DAN-486)."
-        )
-        continue_btn = box.addButton(
-            "Continue with other engines", QMessageBox.ButtonRole.ActionRole)
-        box.addButton(QMessageBox.StandardButton.Ok)
-        try:
-            box.exec()
-            clicked = box.clickedButton()
-        finally:
-            box.deleteLater()
-        if clicked is continue_btn:
-            self._resume_without_saucenao()
+        # No modal (ruling C-4, DAN-1155): a batch left running overnight
+        # would otherwise sit on a dialog nobody is there to dismiss. The
+        # banner carries what the dialog said and both its actions.
+        reset_at = None
+        if state is not None:
+            try:
+                reset_at = datetime.fromisoformat(state.reset_at)
+            except ValueError:
+                pass
+        self._show_quota_banner(state.paused_at if state else time.time(), remaining, reset_at)
+
+    def _show_quota_banner(self, paused_at: float, remaining: int, reset_at: Optional[datetime]):
+        """Populates and shows the Queue page's quota-paused banner
+        (DAN-1167, S-03) and puts the pause on the run strip (S-04, R-06):
+        `paused \u2014 quota exhausted` beside the count and `ETA paused`.
+
+        The counts read the per-row state the table tracks, the way
+        `_interrupted_prose` does, so they are right after a relaunch too.
+        """
+        self._quota_paused = True
+        waiting = _waiting_review_count(self.entries)
+        self._quota_banner_parts['body'].setText(_quota_pause_prose(self.entries, remaining))
+        review = self._quota_banner_parts['review_button']
+        review.setText(f"Review the {waiting} waiting \u2192")
+        # With nothing decided yet there is nothing to review: the button
+        # would open an empty page.
+        review.setVisible(waiting > 0)
+        items = [("Quota exhausted at", time.strftime("%H:%M", time.localtime(paused_at))),
+                 ("Images waiting", f"{remaining:,}")]
+        if reset_at is not None:
+            items.append(("Resets", reset_at.astimezone(timezone.utc).strftime("%H:%M UTC")))
+        slot = self._quota_banner_parts['meta_slot']
+        while slot.count():
+            old = slot.takeAt(0).widget()
+            if old is not None:
+                old.deleteLater()
+        meta, _labels = widgets.meta_line(items, centered=False)
+        slot.addWidget(meta)
+        self.run_note_label.setText(QUOTA_PAUSED_NOTE)
+        self._refresh_run_progress_label()
+        self.quota_banner.setVisible(True)
+
+    def _hide_quota_banner(self):
+        """The pause is being acted on (or the list is gone): the banner,
+        the strip's note and `ETA paused` all describe a state that no
+        longer holds."""
+        self._quota_paused = False
+        self.quota_banner.setVisible(False)
+        if self.run_note_label.text() == QUOTA_PAUSED_NOTE:
+            self.run_note_label.setText("")
+
+    def _review_the_waiting(self):
+        """`Review the N waiting`: opens Review on the first image whose
+        match is decided and still waiting on you."""
+        for row in range(self.table_model.rowCount()):
+            entry = self.table_model.entry_at(row)
+            if entry is not None and _is_waiting_review(entry):
+                self.select_table_row(row)
+                break
+        self.set_mode("review")
 
     def _resume_without_saucenao(self):
         """'Continue with other engines' from the quota-pause dialog:
@@ -3239,6 +3329,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         # rather than helpful. If the quota is still out, pausing persists
         # a fresh one after one image, same as the flag above.
         clear_quota_pause()
+        self._hide_quota_banner()
         # Likewise forget a previous ascii2d block: the site's bot check
         # comes and goes, so a new search is the right moment to find out
         # whether it is still refusing us. Google's consent wall and
