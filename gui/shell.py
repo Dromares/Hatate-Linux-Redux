@@ -51,6 +51,9 @@ IDLE_PROGRESS = "nothing queued"
 IDLE_ETA = "ETA —"
 # What the strip says after a run that left nothing behind (R-06).
 RUN_FAILED_NOTE = "last run failed — see crash log"
+# What it says while SauceNAO's daily quota holds the run (S-04, R-06).
+QUOTA_PAUSED_NOTE = "paused — quota exhausted"
+QUOTA_PAUSED_ETA = "ETA paused"
 
 # A "figure" in a readout: the part the mockup sets in bold (`<b>7/8</b>
 # searched`, `waiting <b>38s</b>`, `ETA <b>~2 min</b>`). A number with the
