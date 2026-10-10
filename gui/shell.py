@@ -192,7 +192,7 @@ class ShellMixin:
         central = widgets.GhostKanji(GHOST_GLYPHS["queue"])
         self.ghost = central
         root = QVBoxLayout(central)
-        root.setContentsMargins(*widgets.PAGE_MARGINS)
+        root.setContentsMargins(*widgets.SHELL_MARGINS)
         root.setSpacing(widgets.PAGE_SPACING)
 
         root.addWidget(self._build_top_bar())
@@ -373,9 +373,19 @@ class ShellMixin:
         wanted to be.
         """
         self.status_bar = QStatusBar()
+        self.status_bar.setObjectName("AppStatusBar")
+        # The mockup's strip is a fixed 24px with a grip-less right edge;
+        # the label is inset by the page gutter so its text lines up with
+        # the content above it (U2).
+        self.status_bar.setSizeGripEnabled(False)
+        self.status_bar.setFixedHeight(widgets.STATUSBAR_HEIGHT)
         self.setStatusBar(self.status_bar)
         self.status_label = QLabel("Ready")
-        self.status_bar.addWidget(self.status_label)
+        self.status_label.setObjectName("StatusText")
+        self.status_label.setContentsMargins(
+            widgets.PAGE_GUTTER - widgets.STATUSBAR_ITEM_INSET, 0, widgets.PAGE_GUTTER, 0)
+        widgets.apply_tracking(self.status_label, 0.06)
+        self.status_bar.addWidget(self.status_label, 1)
 
     # ------------------------------------------------------------------
     # Modes
