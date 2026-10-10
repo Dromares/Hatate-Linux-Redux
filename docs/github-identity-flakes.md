@@ -113,6 +113,23 @@ page) only ever surface `status`/`reason`/`source`/the HTTP status code.
    The two disagree routinely — `ready` plus a failing credentials probe is
    the normal shape of this flake, not evidence of a second bug.
 
+   **Why this matters (DAN-889, 2026-10-07 outage):** the false `ready`
+   also removes the only agent-side repair path. The connection-tools
+   contract says to request access only when search reports `available`
+   or `needs_user_action`; when it reports `ready`, use the connection and
+   do not create an intent. And `GET /api/companies/{id}/tools/connections`
+   is `403` to agents. So the loop closes:
+
+   ```
+   identity unavailable -> search says ready -> connection_request forbidden by contract
+                         -> connections endpoint 403 -> only remedy is a board round-trip
+   ```
+
+   **Interim rule: `connections_search` is not a GitHub health check.**
+   Trust this script's verdict, never the `state` field. Reconciling the
+   two surfaces (so a real outage yields `needs_user_action`) is
+   platform-side follow-up, not built; this page records the rule only.
+
 4. **A negative result is not a company-wide outage until you've run the
    positive control.** The decisive test is always: *while my run fails, is
    any other run succeeding?* Only a demonstrated "nobody is succeeding"
