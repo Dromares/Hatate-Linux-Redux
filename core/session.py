@@ -287,6 +287,22 @@ def has_saved_session() -> bool:
     return session_db.SESSION_DB.exists() or SESSION_FILE.exists()
 
 
+def saved_session_age_seconds() -> Optional[float]:
+    """How long ago the automatic session was last written, or None if
+    neither store has a readable timestamp. Read from the file's own
+    mtime - an autosave rewrites it, so this is the last save, not the
+    last time the list changed."""
+    from . import session_db
+    newest = None
+    for store in (session_db.SESSION_DB, SESSION_FILE):
+        try:
+            stamp = store.stat().st_mtime
+        except OSError:
+            continue
+        newest = stamp if newest is None else max(newest, stamp)
+    return None if newest is None else max(time.time() - newest, 0.0)
+
+
 def load_session(path: Union[str, Path, None] = None) -> List[ImageEntry]:
     """Restores the working list, or an empty list if there's nothing
     saved or it can't be read.

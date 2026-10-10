@@ -25,6 +25,7 @@ import sys
 import threading
 import time
 import traceback
+from pathlib import Path
 
 from .applog import get_logger
 from .paths import CONFIG_DIR
@@ -53,6 +54,14 @@ RUNNING_MARKER = CONFIG_DIR / "crash.log.running"
 # the life of CONFIG_DIR, potentially across years of runs; a fault is
 # always near the end, so only the tail is worth reading.
 CRASH_LOG_TAIL_CHARS = 20_000
+
+# Written at the top of every run's section of crash.log, so one run's
+# faults can be told from the next's.
+SESSION_START_MARK = "--- session started, faulthandler armed ---"
+
+# What faulthandler prints first for each fault it catches - one per crash,
+# however many thread stacks follow it.
+FAULT_HEADER = "Fatal Python error:"
 
 
 def install() -> None:
@@ -116,6 +125,26 @@ def get_recent_crash_log() -> str:
     return data
 
 
+def faults_in_previous_run(path=None) -> int:
+    """How many faults the run BEFORE this one left in crash.log.
+
+    Every run opens its own section with SESSION_START_MARK, so the
+    previous run's faults are the ones between the last mark (this run's,
+    already written by install()) and the one before it. Zero is a real
+    answer, not a failure to read: a SIGKILL or a power cut gives
+    faulthandler no chance to write anything, which is exactly the case
+    where the app says "nothing survived" and the log has nothing to add.
+    """
+    try:
+        data = Path(path or FAULT_FILE).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return 0
+    sections = data.split(SESSION_START_MARK)
+    if len(sections) < 3:
+        return 0
+    return sum(1 for line in sections[-2].splitlines() if line.startswith(FAULT_HEADER))
+
+
 def _install_faulthandler() -> None:
     """Catches what Python cannot: a segfault or abort dumps the C-level
     stack of every thread to crash.log.
@@ -128,7 +157,7 @@ def _install_faulthandler() -> None:
     try:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         _fault_stream = open(FAULT_FILE, "a", buffering=1, encoding="utf-8")
-        _fault_stream.write("\n--- session started, faulthandler armed ---\n")
+        _fault_stream.write("\n" + SESSION_START_MARK + "\n")
         faulthandler.enable(file=_fault_stream, all_threads=True)
         log.debug("Hard-crash handler armed, writing to %s", FAULT_FILE)
     except Exception as exc:  # pragma: no cover - depends on the filesystem
