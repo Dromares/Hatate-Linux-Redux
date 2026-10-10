@@ -1507,10 +1507,16 @@ class TestUncleanShutdownMarker(unittest.TestCase):
         fault = Path(self._tmpdir.name) / "crash.log"
         self._marker_patch = patch.object(crashlog, "RUNNING_MARKER", marker)
         self._fault_patch = patch.object(crashlog, "FAULT_FILE", fault)
+        # mark_clean_shutdown also records WHEN, beside the marker - keep
+        # that off the real config directory too.
+        self._exit_patch = patch.object(
+            crashlog, "CLEAN_EXIT_FILE", Path(self._tmpdir.name) / "last_clean_exit")
         self._marker_patch.start()
         self._fault_patch.start()
+        self._exit_patch.start()
         self.addCleanup(self._marker_patch.stop)
         self.addCleanup(self._fault_patch.stop)
+        self.addCleanup(self._exit_patch.stop)
 
     def test_first_ever_launch_is_not_an_unclean_shutdown(self):
         """No marker on disk at all - e.g. a fresh install - must not be
