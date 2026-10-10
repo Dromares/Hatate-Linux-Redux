@@ -154,6 +154,11 @@ def _write_test_image() -> str:
     return path
 
 
+def _flush_deferred_deletes():
+    from PyQt6.QtCore import QCoreApplication, QEvent
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
 def make_themed_window(testcase, mode="dark"):
     """Build a ``MainWindow`` with the real stylesheet already live, in
     main.py's actual construction order (main.py:60-74): register_fonts()
@@ -193,6 +198,10 @@ def make_themed_window(testcase, mode="dark"):
 
     app = QApplication.instance() or QApplication([])
     register_fonts()
+    # Registered first so it runs last: the delete below is only queued, and
+    # an undelivered one leaves the window alive for every later test's
+    # setStyleSheet() to re-polish (DAN-1256).
+    testcase.addCleanup(_flush_deferred_deletes)
     app.setStyleSheet(theme.stylesheet(mode))
     testcase.addCleanup(lambda: app.setStyleSheet(""))
 

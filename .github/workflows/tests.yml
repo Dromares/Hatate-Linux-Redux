@@ -3,8 +3,14 @@ name: tests
 # The suite is fast (about 15 seconds) and needs no network: every
 # HTTP call in it is stubbed. There is no reason not to run it on
 # everything.
+#
+# DAN-1256: `push` is limited to main. With a bare `push:` every push to a
+# PR branch ran the whole matrix twice on the same SHA - once as a push and
+# once as a pull_request. The pull_request run covers the branch (and is the
+# only one stale-base runs on); the push run on main is the post-merge check.
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -20,6 +26,7 @@ jobs:
   stale-base:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,6 +44,7 @@ jobs:
   # failed.
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -73,6 +81,9 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    # DAN-1256: the default is 360 minutes, so one hung leg (DAN-1238) held a
+    # runner for six hours. A healthy leg takes a few minutes.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
