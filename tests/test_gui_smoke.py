@@ -1356,6 +1356,67 @@ class TestWorkerRegistryOnItsOwn(GuiTestCase):
     def test_wait_for_ignores_a_worker_that_is_not_running(self):
         self.assertIsNone(self.registry.wait_for(None, 10))
 
+    def test_a_queued_prune_survives_the_registry_being_collected(self):
+        """DAN-1262: the flaky SIGSEGV in test_compare_dialogs_do_not_accumulate.
+
+        `finished` is emitted from the dying thread, so retire()'s slot is
+        queued to the GUI thread and sits there until an event loop next
+        runs. When that slot was a lambda closing over the registry, a
+        garbage collection in between (the registry, its parked worker and
+        the lambda are one cycle) cleared the lambda's code while PyQt's
+        queued call still pointed at it, and the next loop turn - in
+        whatever test happened to spin one first - called a hollow function.
+
+        Run in a subprocess because the failure is a segfault, which would
+        take this whole test run with it; the child exits 139 on the bug.
+        """
+        import subprocess
+        import sys
+        script = """
+import gc, sys, threading
+from PyQt6.QtCore import QCoreApplication, QEvent, QThread
+from PyQt6.QtWidgets import QApplication
+sys.path.insert(0, sys.argv[1])
+from gui.worker_lifecycle import WorkerRegistry
+
+app = QApplication([])
+release = threading.Event()
+
+class Slow(QThread):
+    def run(self):
+        release.wait(10)
+
+class Owner:
+    def __init__(self):
+        self.workers = WorkerRegistry()
+        self.me = self    # a window is in cycles too
+
+def scenario():
+    owner = Owner()
+    worker = Slow()
+    worker.start()
+    owner.workers.retire(worker, grace_ms=1)
+    assert worker in owner.workers, "worker should have been parked"
+    release.set()
+    worker.wait(5000)
+
+scenario()
+gc.collect()
+for _ in range(5):
+    QApplication.processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+print("survived")
+"""
+        root = str(Path(__file__).resolve().parent.parent)
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+        done = subprocess.run(
+            [sys.executable, "-I", "-c", script, root],
+            capture_output=True, text=True, timeout=120, env=env,
+        )
+        self.assertEqual(done.returncode, 0,
+                         f"child died (rc={done.returncode}): {done.stderr[-500:]}")
+        self.assertIn("survived", done.stdout)
+
 
 @unittest.skipUnless(HAVE_QT, "PyQt6 not installed")
 class TestSessionStoreIsIsolatedPerTest(GuiTestCase):
