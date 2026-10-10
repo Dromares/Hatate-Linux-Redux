@@ -47,6 +47,7 @@ from gui.compare_dialog import (
     WipeView, build_difference_overlay, load_comparison,
 )
 from gui.preview_text import ComparisonReadout
+from gui.table_delegates import TagRowDelegate
 
 if TYPE_CHECKING:
     from core.config import Settings
@@ -307,15 +308,30 @@ class ReviewViewMixin:
         card.setMinimumWidth(320)
         card.setMaximumWidth(460)
 
-        nav = QHBoxLayout()
-        self.review_match_label = widgets.heading("No match")
+        # A hairline box: the label on the left, the two 36px steppers on
+        # the right (the mockup's .nav-row). Steppers were ~12px bare glyphs.
+        self.review_match_nav = QFrame()
+        self.review_match_nav.setObjectName("MatchNav")
+        nav = QHBoxLayout(self.review_match_nav)
+        nav.setContentsMargins(12, 8, 8, 8)
+        nav.setSpacing(8)
+        self.review_match_label = QLabel("No match")
+        self.review_match_label.setObjectName("MatchLabel")
+        font = self.review_match_label.font()
+        font.setCapitalization(QFont.Capitalization.AllUppercase)
+        self.review_match_label.setFont(font)
+        widgets.apply_tracking(self.review_match_label, 0.1)
         nav.addWidget(self.review_match_label)
         nav.addStretch(1)
-        nav.addWidget(widgets.icon_button(
-            "◂", "Previous match candidate ([)", lambda: self._step_review_candidate(-1)))
-        nav.addWidget(widgets.icon_button(
-            "▸", "Next match candidate (])", lambda: self._step_review_candidate(+1)))
-        layout.addLayout(nav)
+        self.review_prev_match_btn = widgets.icon_button(
+            "◀", "Previous match candidate ([)",
+            lambda: self._step_review_candidate(-1), boxed=True)
+        self.review_next_match_btn = widgets.icon_button(
+            "▶", "Next match candidate (])",
+            lambda: self._step_review_candidate(+1), boxed=True)
+        nav.addWidget(self.review_prev_match_btn)
+        nav.addWidget(self.review_next_match_btn)
+        layout.addWidget(self.review_match_nav)
 
         self.candidate_combo = widgets.WideComboBox()
         self.candidate_combo.setEnabled(False)
@@ -326,6 +342,9 @@ class ReviewViewMixin:
 
         layout.addWidget(widgets.section_label("02 // Tags"))
         self.tag_list = QListWidget()
+        self.tag_list.setObjectName("TagList")
+        self.tag_list.setItemDelegate(TagRowDelegate(
+            lambda: theme.resolve_mode(self.settings.theme), self.tag_list))
         self.tag_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.tag_list.itemChanged.connect(self._on_tag_item_edited)
         layout.addWidget(self.tag_list, 1)
@@ -708,6 +727,10 @@ class ReviewViewMixin:
                 f"Match {combo.currentIndex() + 1} of {combo.count()}")
         else:
             self.review_match_label.setText("No match")
+        index, count = combo.currentIndex(), combo.count()
+        has_candidates = entry is not None and count > 0
+        self.review_prev_match_btn.setEnabled(has_candidates and index > 0)
+        self.review_next_match_btn.setEnabled(has_candidates and index < count - 1)
 
         if entry is not None:
             self.review_mark_btn.setText(
