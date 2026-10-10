@@ -24,7 +24,7 @@ from gui import theme, widgets
 from tests.test_flat_surfaces import MODES, _hairline, _near, _rgb
 from tests.test_gui_harness import make_themed_window
 from tests.test_gui_smoke import GuiTestCase
-from tests.test_theme import _composite_over, _contrast_ratio, _parse_hex, _parse_rgba
+from tests.test_theme import _composite_over, _contrast_ratio, _parse_hex
 
 MIN_TEXT_CONTRAST = 4.5
 LONG_URL = "https://danbooru.donmai.us/posts/7340112?q=a_very_long_query_string_that_cannot_fit"
