@@ -29,8 +29,12 @@ SPLITTER_HANDLE = 12
 INPUT_MIN_HEIGHT = 38     # a single-line edit crushed below this stops being readable
 BUTTON_MIN_HEIGHT = 40    # tokens.css's page-level button, plus the 36px boxed icon below
 ICON_BOX = 36
+BUTTON_ROW_SPACING = 12   # tokens.css `--space-3`: the gap between buttons in a row
 RUN_BANNER_PROSE_WIDTH = 840   # the mockup's `.run-banner__detail` max-width
 RUN_BANNER_MARGINS = (24, 24, 24, 24)   # its `padding: var(--space-5)`
+RUN_BANNER_GAP = 24            # its `gap: var(--space-5)` between glyph and text
+RUN_BANNER_GLYPH_COLUMN = 17   # puts the prose 66px in from the frame edge, as the mockup does
+RUN_BANNER_DISCARD_TRACKING = 0.06   # `.run-banner__discard`'s letter-spacing
 SURVIVED_GLYPH_BOX = 42   # the mockup's boxed ✕: a 32px glyph in a hairline square
 
 
@@ -138,11 +142,13 @@ def run_banner():
     frame.setObjectName('RunBanner')
     layout = QHBoxLayout(frame)
     layout.setContentsMargins(*RUN_BANNER_MARGINS)
-    layout.setSpacing(CARD_SPACING)
+    layout.setSpacing(RUN_BANNER_GAP)
     layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
     glyph = QLabel(theme.status_glyph('poor'))
     glyph.setObjectName('RunBannerGlyph')
+    glyph.setFixedWidth(RUN_BANNER_GLYPH_COLUMN)
+    glyph.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
     layout.addWidget(glyph, 0, Qt.AlignmentFlag.AlignTop)
 
     text_col = QVBoxLayout()
@@ -168,13 +174,14 @@ def run_banner():
     # button - error-cost asymmetry: a wrong delete costs more than a
     # wrong tag, so it never gets primary-button weight.
     actions = QHBoxLayout()
-    actions.setSpacing(12)
+    actions.setSpacing(BUTTON_ROW_SPACING)
     resume_button = pill_button("Resume Queue", primary=True)
     actions.addWidget(resume_button)
     crash_log_button = pill_button("View Crash Log")
     actions.addWidget(crash_log_button)
     discard_label = LinkLabel("Discard &amp; start fresh")
     discard_label.setObjectName('RunBannerDiscard')
+    uppercase_voice(discard_label, RUN_BANNER_DISCARD_TRACKING)
     actions.addWidget(discard_label)
     actions.addStretch(1)
     text_col.addLayout(actions)
@@ -282,6 +289,7 @@ def nothing_survived(meta_items, below_weight):
     crash_log = pill_button("View crash log")
     add_files = pill_button("Add files\u2026")
     buttons = QHBoxLayout()
+    buttons.setSpacing(BUTTON_ROW_SPACING)
     buttons.addStretch(1)
     for button in (new_search, crash_log, add_files):
         buttons.addWidget(button)

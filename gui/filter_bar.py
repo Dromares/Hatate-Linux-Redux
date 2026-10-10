@@ -28,6 +28,7 @@ from gui import widgets
 
 FILTER_BAND_MARGINS = (16, 10, 16, 10)
 FILTER_BAND_SPACING = 12
+FIELD_TRACKING = 0.04   # tokens.css's `.field` letter-spacing (0.04em)
 
 
 def set_all_checked(actions, checked: bool) -> None:
@@ -110,7 +111,7 @@ class FilterBar(QFrame):
             "Show only rows with the statuses you tick. Only the statuses "
             "actually present in the list are offered."
         )
-        self._speak_caps(self.filter_status_button)
+        self._speak_field(self.filter_status_button)
         layout.addWidget(self.filter_status_button)
 
         self.filter_site_button = QToolButton()
@@ -124,7 +125,7 @@ class FilterBar(QFrame):
             f'"{NO_SITE}" collects rows with no match at all - not the same as '
             '"Other", which means a match from a site with no name of its own.'
         )
-        self._speak_caps(self.filter_site_button)
+        self._speak_field(self.filter_site_button)
         layout.addWidget(self.filter_site_button)
 
         self.filter_upscale_button = QToolButton()
@@ -135,7 +136,7 @@ class FilterBar(QFrame):
         self.filter_upscale_button.setToolTip(
             "Show only rows with the Check for Upscaling verdict you tick."
         )
-        self._speak_caps(self.filter_upscale_button)
+        self._speak_field(self.filter_upscale_button)
         layout.addWidget(self.filter_upscale_button)
 
         self.filter_clear_button = widgets.pill_button("Clear", self.clear)
@@ -159,12 +160,12 @@ class FilterBar(QFrame):
         self._upscale_actions = {}
 
     @staticmethod
-    def _speak_caps(button):
-        """The page-level mono-caps voice (Q-01 casing, DAN-1161): the
-        stylesheet's `voice="caps"` face plus an AllUppercase QFont, so
-        `.text()` and the accessible name stay "Status: all"."""
-        button.setProperty('voice', 'caps')
-        widgets.uppercase_voice(button)
+    def _speak_field(button):
+        """The mockup's `.field--button` face: mono and lightly tracked but
+        sentence case - a combo shows state, not a command, so it is not
+        given `widgets.uppercase_voice` (DAN-1275, correcting Q-01)."""
+        button.setProperty('voice', 'field')
+        widgets.apply_tracking(button, FIELD_TRACKING)
 
     # -- what the owner reads -------------------------------------------
     def current_filter(self) -> EntryFilter:

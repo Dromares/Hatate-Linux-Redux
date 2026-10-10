@@ -246,7 +246,7 @@ class TestMetaLine(_InterruptedWindow):
             with self.subTest(mode=mode):
                 self.assertEqual(
                     self._meta(self._window(mode)),
-                    [("Last autosave", "2h 9m ago"),
+                    [("Last autosave", "2h 09m ago"),
                      ("Last clean exit", "3d 4h ago"),
                      ("Crash log", "1 new entry")])
 
@@ -289,6 +289,31 @@ class TestActionsUnchanged(_InterruptedWindow):
         self.assertIsNotNone(discard)
         self.assertEqual(discard.objectName(), "RunBannerDiscard")
         self.assertEqual(len(win.run_banner.findChildren(QPushButton)), 2)
+
+    def test_discard_is_uppercase_mono_tracked_and_still_underlined(self):  # DAN-1275
+        for mode in MODES:
+            with self.subTest(mode=mode):
+                discard = self._window(mode).run_banner.findChild(widgets.LinkLabel)
+                discard.ensurePolished()
+                font = discard.font()
+                self.assertEqual(font.capitalization(), QFont.Capitalization.AllUppercase)
+                self.assertGreater(font.letterSpacing(), 100)
+                self.assertEqual(font.family(), "JetBrains Mono")
+                self.assertIn("<u>", discard.text())
+                self.assertIn("start fresh", discard.text())  # the string stays sentence case
+
+    def test_the_glyph_has_its_own_column_and_the_prose_starts_66px_in(self):  # DAN-1275
+        for mode in MODES:
+            with self.subTest(mode=mode):
+                win = self._window(mode)
+                frame = win.run_banner
+                glyph = self._label(win, "RunBannerGlyph")
+                body = self._label(win, "RunBannerBody")
+                self.assertEqual(glyph.font().pixelSize(), 28)
+                self.assertEqual(body.mapTo(frame, body.rect().topLeft()).x(), 66)
+                self.assertGreaterEqual(
+                    body.mapTo(frame, body.rect().topLeft()).x()
+                    - glyph.mapTo(frame, glyph.rect().topRight()).x(), 24)
 
     def test_the_actions_sit_below_the_prose_in_one_row_discard_last(self):
         for mode in MODES:
