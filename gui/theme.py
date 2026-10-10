@@ -796,7 +796,7 @@ def stylesheet(mode):
             background: {card};
             color: {ink_65};
             border: none;
-            border-bottom: 1px solid {ink_28};
+            border-bottom: 1px solid {ink_46};  /* not the mockup's ink-28: DAN-224's 3:1 border floor */
             padding: 7px 12px;
     }}
     QHeaderView::section:hover {{ color: {ink_100}; }}
