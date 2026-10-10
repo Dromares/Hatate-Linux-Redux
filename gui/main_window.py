@@ -59,7 +59,7 @@ from core.viewport import entries_needing_thumbnails, visible_range_with_buffer
 from core.tag_colors import get_tag_color
 from core.tag_rules import apply_inline_edit
 from gui import theme, widgets
-from gui.shell import IDLE_ETA, IDLE_PROGRESS, ShellMixin
+from gui.shell import EMPTY_GHOST_GLYPH, IDLE_ETA, IDLE_PROGRESS, ShellMixin
 from gui.review_view import ReviewViewMixin
 from gui.activity_view import ActivityViewMixin
 from gui.table_delegates import RuledRowDelegate, ChipDelegate
@@ -203,6 +203,8 @@ def _host_from_url(url: str) -> Optional[str]:
 # the wipe, which uses the full file. Still far short of a multi-thousand-
 # pixel scan's full decode.
 PREVIEW_DECODE_SIZE = QSize(2048, 2048)
+# The empty Queue's headline sits 1 : this of the free height above : below it.
+DROP_ZONE_BELOW_WEIGHT = 4
 
 # "Re-check Queued Imports" deliberately appears in both the Files and the
 # Hydrus menu (DAN-36). One QAction is shared between them, so this text is
@@ -856,9 +858,11 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         layout.setContentsMargins(32, 24, 32, 24)
         self.queue_section_label = widgets.section_label("01 // Queue")
         layout.addWidget(self.queue_section_label, 0, Qt.AlignmentFlag.AlignLeft)
-        layout.addStretch(1)
+        layout.addStretch(1)  # index 1: the weight above the block (E-03)
 
-        title = widgets.heading("Drop images here")
+        # E-01: the mockup's `.drop-title` - the screen-title face at the
+        # display size, with the full stop.
+        title = widgets.display_title("Drop images here.")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
@@ -892,7 +896,13 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         buttons.addStretch(1)
         layout.addLayout(buttons)
 
-        layout.addStretch(1)
+        # E-03: the block is top-weighted, not centred. The mockup puts the
+        # headline's top at ~37% of the window, which is 1 part of the free
+        # height above it to DROP_ZONE_BELOW_WEIGHT below. Stretch factors
+        # (not a fixed gap) so it holds as the window is resized.
+        layout.addStretch(DROP_ZONE_BELOW_WEIGHT)
+        # E-02: the dossier frame's corner brackets (P10 primitive).
+        widgets.Brackets(panel)
         return panel
 
     def _refresh_queue_empty_state(self, *_args):
@@ -900,6 +910,16 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         if stack is None:
             return
         stack.setCurrentIndex(0 if self.entries else 1)
+        # The Empty page has its own watermark (G-07: 空 where the list is
+        # 力); only restyle it while Queue is the page on show.
+        if self.current_mode() == "queue":
+            self.set_ghost(self.ghost_glyph_for("queue"))
+
+    def ghost_glyph_for(self, key):
+        stack = getattr(self, "queue_stack", None)
+        if key == "queue" and stack is not None and stack.currentIndex() == 1:
+            return EMPTY_GHOST_GLYPH
+        return super().ghost_glyph_for(key)
 
 
 

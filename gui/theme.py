@@ -65,6 +65,11 @@ DARK = {
     'ink_46': 'rgba(205,196,186,0.46)',
     'ink_45': 'rgba(205,196,186,0.45)',
     'ink_28': 'rgba(205,196,186,0.28)',
+    # The ghost kanji's own tier (tokens.css `--ink-05`, "ghosted background
+    # kanji"). A typographic ornament, so contrast-exempt by design; it is
+    # kept as its own token, not borrowed from ink_18, because it has to
+    # move on its own: dark ink reads at 5%, ink on paper needs 8%.
+    'ink_05': 'rgba(205,196,186,0.05)',
     # ink_18's own value is unchanged (DAN-224). 12 of its 15 border
     # consumers measured under 3:1 here and were moved to ink_46/ink_58
     # above instead of raising this tier. The remaining 3 stay deliberately
@@ -110,6 +115,9 @@ LIGHT = {
     'ink_46': 'rgba(33,29,23,0.51)',
     'ink_45': 'rgba(33,29,23,0.50)',
     'ink_28': 'rgba(33,29,23,0.45)',
+    # tokens.css raises the ghost kanji from 5% to 8% on paper: 5% dark ink
+    # on bright paper measures under 1.1:1, a smudge rather than an ornament.
+    'ink_05': 'rgba(33,29,23,0.08)',
     # ink_18: unchanged, still deliberately quiet in the same 3 places - see
     # DARK above.
     'ink_18': 'rgba(33,29,23,0.32)',
@@ -333,6 +341,17 @@ def stylesheet(mode):
        screen. ink_18 is the mockup's "card borders" tier. A card that
        only groups other regions (the Queue and Review columns) is
        `framed=false` and draws no line of its own. ---- */
+    /* ---- the ghost kanji and the corner brackets: both are custom paint
+       and take their colour from here, so a theme switch reaches them
+       through the same re-polish as everything else. The page chain
+       above the ghost must paint nothing, or the glyph is hidden: plain
+       QWidgets get the global page fill, so each container that sits over
+       the glyph is named here. ---- */
+    QWidget#GhostKanji {{ background: transparent; color: {ink_05}; }}
+    QWidget#GhostKanji QStackedWidget, QWidget#GhostKanji QSplitter,
+    QWidget[seeThrough="true"] {{ background: transparent; }}
+    QWidget#Brackets {{ background: transparent; color: {ink_65}; }}
+
     QFrame#Card {{
             background: transparent;
             border: 1px solid {ink_18};
@@ -421,7 +440,7 @@ def stylesheet(mode):
        mockup's --text-display; the face stays Source Serif 4 (ruling C-2
        on DAN-1155: the mockup rendered Space Grotesk only because of a
        CSS comment bug, DAN-1156 M-2). ---- */
-    QLabel#ScreenTitle {{
+    QLabel#ScreenTitle, QLabel#DisplayTitle {{
             font-family: {font_serif};
             font-size: 36px;
             font-weight: 600;

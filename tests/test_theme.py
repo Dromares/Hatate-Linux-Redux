@@ -1141,6 +1141,17 @@ def _contrast_sweep(mode):
 # string. Ported verbatim from DAN-290's contrast-audit/REPORT.md sec 3.
 _SWEEP_EXEMPTIONS = [
     {
+        "kind": "text", "selectors": frozenset({"QWidget#GhostKanji"}),
+        "fg_token": "ink_05", "bg_prefix": None,
+        "reason": "DAN-1163 / gap register G-07: the ghost kanji is a typographic "
+                  "ornament painted behind the page, not text anyone reads - "
+                  "'about 6% ink' IS the design, and raising it to 4.5:1 would "
+                  "make it the loudest thing on the screen. WCAG 1.4.3 exempts "
+                  "pure decoration. It is wired to `color` only because that is "
+                  "how a custom-painted widget takes its ink from the sheet; "
+                  "tests/test_ghost_kanji.py pins its alpha instead.",
+    },
+    {
         "kind": "border", "selectors": frozenset({"QStatusBar"}),
         "fg_token": "ink_18", "bg_prefix": "page",
         "reason": "DAN-241/244: a passive single-label strip with no interactive "

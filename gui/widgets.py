@@ -8,8 +8,8 @@ The point of the file is that a card looks like a card everywhere without
 anyone having to remember 18/16/18/16. Anything that decides a measurement
 belongs here rather than in a view.
 """
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QPixmap
+from PyQt6.QtCore import QEvent, QPoint, QRect, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QFont, QFontMetrics, QPainter, QPixmap, QRegion
 from PyQt6.QtWidgets import (
     QButtonGroup, QComboBox, QFrame, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
@@ -174,6 +174,15 @@ def screen_title(text):
     and always the first thing on it."""
     label = QLabel(text)
     label.setObjectName('ScreenTitle')
+    return label
+
+
+def display_title(text):
+    """A headline in the screen-title face and size that is not a screen's
+    own title - the empty Queue's "Drop images here." (E-01). Kept apart
+    from `screen_title` so "the first thing on a page" stays countable."""
+    label = QLabel(text)
+    label.setObjectName('DisplayTitle')
     return label
 
 
@@ -370,6 +379,194 @@ def roomy(widget):
     if isinstance(widget, QLineEdit):
         widget.setMinimumHeight(INPUT_MIN_HEIGHT)
     return widget
+
+
+# The ghost kanji (G-07): tokens.css `.kanji-ghost` is 420px Ryoku Kanji,
+# 40px in from the right edge and 40px above the top, so the glyph's top
+# bleeds off the window.
+GHOST_SIZE = 420
+GHOST_TOP = -40
+GHOST_RIGHT = 40
+# Corner brackets (V-03, E-02): tokens.css `.frame__corner` is a 12px L, 2px
+# thick, sitting on the frame's own 1px hairline.
+BRACKET_ARM = 12
+BRACKET_WEIGHT = 2
+
+
+class GhostKanji(QWidget):
+    """A page that paints one very faint kanji behind whatever is on it.
+
+    It is the window's central widget: the mockup hangs the glyph off the
+    whole content area, behind the top bar and the run strip as well as the
+    mode's own page, so it belongs to the one surface they all sit on rather
+    than to each page. `set_glyph` swaps the character as the mode changes
+    (力 Queue, 鏡 Review, 動 Activity, 空 Empty).
+
+    It is a paint, not a child widget: nothing sits in the way of the mouse,
+    so there is no hit-test to interfere with. Colour comes from the sheet
+    (`QWidget#GhostKanji { color: ink_05 }`), which is how it follows a
+    dark/light switch with no mode plumbing of its own.
+
+    **It only shows through surfaces that paint nothing.** A child with a
+    fill (the table, an input, a plain `QWidget` under the global
+    `QWidget { background }` rule) hides it, which is why DAN-1160 made the
+    cards transparent first and why the page chain carries
+    `background: transparent` in the sheet.
+
+    The glyph is rasterised once per (character, colour, pixel ratio) into
+    a pixmap and blitted. Qt repaints a translucent parent under every
+    child that scrolls, so a paintEvent that re-shaped 420px of text each
+    time would run on every scroll step.
+    """
+
+    def __init__(self, glyph="", parent=None):
+        super().__init__(parent)
+        self.setObjectName('GhostKanji')
+        self._glyph = glyph
+        self._cache_key = None
+        self._cache = None
+        self.renders = 0  # how often the glyph was rasterised; tests read it
+
+    def glyph(self):
+        return self._glyph
+
+    def set_glyph(self, glyph):
+        if glyph != self._glyph:
+            self._glyph = glyph
+            self.update()
+
+    def _font(self):
+        font = QFont("Ryoku Kanji")
+        font.setStyleHint(QFont.StyleHint.Serif)
+        font.setPixelSize(GHOST_SIZE)
+        return font
+
+    def ghost_rect(self):
+        """Where the glyph's box sits, in this widget's coordinates.
+
+        The box is as wide as the glyph advances and 420px tall, as the
+        mockup's `line-height: 1` makes it, anchored 40px in from the right.
+        """
+        width = QFontMetrics(self._font()).horizontalAdvance(self._glyph)
+        return QRect(self.width() - GHOST_RIGHT - width, GHOST_TOP,
+                     width, GHOST_SIZE)
+
+    def _pixmap(self):
+        colour = self.palette().color(self.foregroundRole())
+        ratio = self.devicePixelRatioF()
+        key = (self._glyph, colour.rgba(), ratio)
+        if key != self._cache_key:
+            font = self._font()
+            metrics = QFontMetrics(font)
+            width = metrics.horizontalAdvance(self._glyph)
+            pixmap = QPixmap(round(width * ratio), round(GHOST_SIZE * ratio))
+            pixmap.setDevicePixelRatio(ratio)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setFont(font)
+            painter.setPen(colour)
+            # CSS `line-height: 1` centres the font's ascent+descent in the
+            # 420px line box; the baseline falls where that puts it.
+            baseline = (GHOST_SIZE - (metrics.ascent() + metrics.descent())) // 2 \
+                + metrics.ascent()
+            painter.drawText(0, baseline, self._glyph)
+            painter.end()
+            self._cache_key, self._cache = key, pixmap
+            self.renders += 1
+        return self._cache
+
+    def paintEvent(self, event):
+        box = self.ghost_rect()
+        if not self._glyph or not box.intersects(event.rect()):
+            return
+        painter = QPainter(self)
+        painter.drawPixmap(box.topLeft(), self._pixmap())
+
+
+def see_through(root):
+    """Lets the ghost kanji show through every plain container under `root`.
+
+    The sheet's global `QWidget { background: page }` fills any bare
+    `QWidget`, and a page is a stack of them (the page, its panels, a row
+    holding a button strip). Each would paint the page colour over the
+    glyph. A plain container carries no fill of its own to lose, so it is
+    marked `seeThrough` and the sheet makes it transparent.
+
+    Only exact `QWidget`s are marked: a subclass is a control that owns
+    its look (an input, a table viewport, a button) and keeps its fill,
+    as does a scroll area's viewport. A container built later than this
+    call is not marked; `tests/test_ghost_kanji.py` samples every page for
+    exactly that.
+    """
+    from PyQt6.QtWidgets import QAbstractScrollArea
+
+    for child in root.findChildren(QWidget):
+        if type(child) is not QWidget:
+            continue
+        if isinstance(child.parentWidget(), QAbstractScrollArea):
+            continue
+        child.setProperty('seeThrough', True)
+
+
+class Brackets(QWidget):
+    """Four corner crop-marks over a framed region: the dossier frame.
+
+    An overlay: `Brackets(frame)` lays itself over `frame`, follows its
+    size, and stays on top of whatever the frame later gains. The mockup's
+    `.frame__corner` marks sit on the frame's hairline, so the arms are
+    drawn from the frame's outer corner inward.
+
+    The overlay is masked down to the four L shapes, which does two jobs.
+    Nothing is under the mouse but the marks themselves (and those are
+    `WA_TransparentForMouseEvents`, so the frame's contents still take every
+    click), and a table scrolling underneath never asks the overlay to
+    repaint, because the overlay does not cover the part that moves.
+
+    Colour comes from the sheet (`QWidget#Brackets { color: ink_65 }`).
+    """
+
+    def __init__(self, frame, arm=BRACKET_ARM, weight=BRACKET_WEIGHT):
+        super().__init__(frame)
+        self.setObjectName('Brackets')
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._arm = arm
+        self._weight = weight
+        frame.installEventFilter(self)
+        self._fit()
+        self.show()  # a child made after its parent is shown starts hidden
+
+    def corner_rects(self):
+        """The eight bars that make up the four L shapes, none overlapping."""
+        w, h, a, t = self.width(), self.height(), self._arm, self._weight
+        # The vertical bars start below the horizontal ones so the corner
+        # square is covered once: translucent ink painted twice is darker.
+        return [
+            QRect(0, 0, a, t), QRect(0, t, t, a - t),
+            QRect(w - a, 0, a, t), QRect(w - t, t, t, a - t),
+            QRect(0, h - t, a, t), QRect(0, h - a, t, a - t),
+            QRect(w - a, h - t, a, t), QRect(w - t, h - a, t, a - t),
+        ]
+
+    def _fit(self):
+        frame = self.parentWidget()
+        self.setGeometry(QRect(QPoint(0, 0), frame.size()))
+        region = QRegion()
+        for rect in self.corner_rects():
+            region = region.united(QRegion(rect))
+        self.setMask(region)
+        self.raise_()
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.Resize, QEvent.Type.ChildAdded,
+                            QEvent.Type.Show):
+            self._fit()
+        return False
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        colour = self.palette().color(self.foregroundRole())
+        for rect in self.corner_rects():
+            painter.fillRect(rect, colour)
 
 
 def apply_theme(root, mode):

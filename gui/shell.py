@@ -157,6 +157,12 @@ class _ModeStack(QStackedWidget):
 
 MARK_GLYPH = "鏡"  # U+93E1, in the bundled Ryoku Kanji subset
 
+# The ghost kanji behind each mode (G-07), all four in the bundled subset.
+# The Empty state is not a mode of its own - it is a page of Queue - so its
+# glyph is asked for through `ghost_glyph_for` while that page is showing.
+GHOST_GLYPHS = {"queue": "力", "review": "鏡", "activity": "動"}
+EMPTY_GHOST_GLYPH = "空"
+
 # (key, label, tooltip). The order is the order of the work.
 MODES = (
     ("queue", "Queue",
@@ -181,7 +187,8 @@ class ShellMixin:
     # ------------------------------------------------------------------
     def _build_shell(self, pages):
         """Puts the chrome around `pages`, a {mode key: widget} mapping."""
-        central = QWidget()
+        central = widgets.GhostKanji(GHOST_GLYPHS["queue"])
+        self.ghost = central
         root = QVBoxLayout(central)
         root.setContentsMargins(*widgets.PAGE_MARGINS)
         root.setSpacing(widgets.PAGE_SPACING)
@@ -197,6 +204,7 @@ class ShellMixin:
             self.mode_stack.addWidget(page)
         root.addWidget(self.mode_stack, 1)
 
+        widgets.see_through(central)
         self.setCentralWidget(central)
         self.set_mode("queue")
 
@@ -375,12 +383,24 @@ class ShellMixin:
         if stack.currentWidget() is not page:
             stack.setCurrentWidget(page)
         self._current_mode = key
+        self.set_ghost(self.ghost_glyph_for(key))
 
         button = getattr(self, "mode_buttons", {}).get(key)
         if button is not None and not button.isChecked():
             button.setChecked(True)
 
         self._on_mode_changed(key)
+
+    def ghost_glyph_for(self, key):
+        """The watermark a mode shows. A hook: the Queue swaps in the Empty
+        glyph while it is showing its drop zone."""
+        return GHOST_GLYPHS.get(key, "")
+
+    def set_ghost(self, glyph):
+        """Changes the watermark. Safe to call before the shell exists."""
+        ghost = getattr(self, "ghost", None)
+        if ghost is not None:
+            ghost.set_glyph(glyph)
 
     def current_mode(self):
         return getattr(self, "_current_mode", "queue")
