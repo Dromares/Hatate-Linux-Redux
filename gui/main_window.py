@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from PIL import Image
 from PyQt6 import sip
 from PyQt6.QtCore import (
-    Qt, QSize, QByteArray, QItemSelection, QItemSelectionModel, QTimer, pyqtSignal,
+    Qt, QSize, QByteArray, QEvent, QItemSelection, QItemSelectionModel, QTimer, pyqtSignal,
 )
 from PyQt6.QtGui import (
     QAction, QActionGroup, QColor, QDesktopServices, QIcon, QImageReader, QPalette,
@@ -63,13 +63,14 @@ from gui import theme, widgets
 from gui.shell import EMPTY_GHOST_GLYPH, IDLE_ETA, IDLE_PROGRESS, RUN_FAILED_NOTE, ShellMixin
 from gui.review_view import ReviewViewMixin
 from gui.activity_view import ActivityViewMixin
-from gui.table_delegates import ChipDelegate
+from gui.table_delegates import RuledRowDelegate, ChipDelegate
 from gui.add_tags_dialog import AddTagsDialog
 # Re-exported deliberately: these define how a row renders, so they live
 # with the model, but the sort keys here (and the GUI tests) still import
 # them from this module.
 from gui.image_table_model import (  # noqa: F401
-    COLUMNS, COL_ENGINE, COL_SENT, COL_SIMILARITY, COL_STATUS, ImageTableModel, header_layout_is_usable,
+    COLUMNS, COL_ENGINE, COL_SENT, COL_SIMILARITY, COL_STATUS, COL_THUMB, ImageTableModel,
+    default_column_widths, header_layout_is_usable,
     sort_key_for_column, _entry_cache_label, _entry_engine_label,
     _entry_sent_label, _entry_size_delta_label, _size_delta_weight,
 )
@@ -108,7 +109,8 @@ log = get_logger("gui")
 # read - or filtered out - independently of everything else the GUI logs.
 lazylog = get_logger("gui.lazy_thumbs")
 
-THUMB_COLUMN_SIZE = 48  # px, for both the row icon and the row height
+THUMB_COLUMN_SIZE = 40  # px, the row icon; the row itself is QUEUE_ROW_HEIGHT
+QUEUE_ROW_HEIGHT = 49   # px, the mockup's row (Q-06): hairline included, so 48 + 1 rule
 
 # Row thumbnails are decoded at this multiple of their display size, then
 # smooth-scaled down. Asking the decoder for exactly 48px produces a
@@ -131,6 +133,7 @@ THUMB_ICON_CACHE_ENTRIES = 4000      # ~36 MB worst case
 # "the headers are missing" rather than as a layout problem.
 MIN_COLUMN_WIDTH = 24
 DEFAULT_COLUMN_WIDTH = 90
+MIN_VIEWPORT_FOR_DEFAULT_WIDTHS = 600  # narrower is a not-yet-laid-out table, not a real size
 ENGINE_COLUMN_WIDTH = 120
 
 THUMB_VIEWPORT_BUFFER_ROWS = 15
@@ -812,7 +815,17 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
         header.setSectionsMovable(True)
         header.setMinimumSectionSize(24)  # a column can be shrunk small, but never dragged to nothing
-        self.table.setColumnWidth(0, THUMB_COLUMN_SIZE + 12)
+        self.table.setColumnWidth(0, THUMB_COLUMN_SIZE + 20)
+        # The last column takes up whatever the others leave, so the
+        # default layout fills the width with no horizontal scrollbar and
+        # no dead strip after "Upscale" (Q-04). The columns before it stay
+        # Interactive: still user-resizable and movable (B-11).
+        header.setStretchLastSection(True)
+        # Q-03: UPPERCASE mono, left-aligned, like every other label in
+        # the mockup's voice. The caps come from the model (headerData's
+        # FontRole), so the section text itself stays "Size diff.".
+        header.setDefaultAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         # Lazy thumbnails follow the viewport, so anything that changes
         # WHICH rows are on screen has to trigger a re-check.
         self.table.verticalScrollBar().valueChanged.connect(
@@ -821,8 +834,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         self.table.verticalScrollBar().rangeChanged.connect(
             lambda _a, _b: self._schedule_viewport_thumbnails("scrollbar range changed")
         )
-        self.table.setColumnWidth(1, 220)  # File - give it a sensible starting width since it's no longer Stretch
-        # Wide enough for the longest chip plus its padding. At Qt's
+                # Wide enough for the longest chip plus its padding. At Qt's
         # default section width "Unsearched" elides to "Unsearc…",
         # which is the first thing a new list is full of.
         self.table.setColumnWidth(COL_STATUS, 130)
@@ -833,7 +845,12 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         # the last column leaves a 1440px window.
         self.table.setColumnWidth(COL_ENGINE, ENGINE_COLUMN_WIDTH)
         self.table.setIconSize(QSize(THUMB_COLUMN_SIZE, THUMB_COLUMN_SIZE))
-        self.table.verticalHeader().setDefaultSectionSize(THUMB_COLUMN_SIZE + 8)
+        # No row numbers (Q-05): nothing here reads a click on the
+        # vertical header, and the sort/selection state is in the rows.
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(QUEUE_ROW_HEIGHT)
+        self.table.setShowGrid(False)  # no cell lines through a selected row (Q-07)
+        self.table.setAlternatingRowColors(True)  # zebra; the tone is theme.py's
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         # QTableView has no itemSelectionChanged (that is a widget-item
@@ -849,6 +866,8 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         # Status and Sent draw as chips rather than as a filled cell. The
         # mode is read through a callable so a theme switch repaints in
         # the new palette without anything rebuilding the delegate.
+        self.table.setItemDelegate(RuledRowDelegate(
+            lambda: theme.resolve_mode(self.settings.theme), self.table))
         self._chip_delegate = ChipDelegate(
             lambda: theme.resolve_mode(self.settings.theme), self.table)
         self.table.setItemDelegateForColumn(COL_STATUS, self._chip_delegate)
@@ -859,6 +878,11 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         self.table.setItemDelegateForColumn(COL_SIMILARITY, self._chip_delegate)
 
         self._restore_table_header_state()
+        # A saved layout is the user's; without one the default widths are
+        # worked out from the viewport once it has a real size.
+        self._default_widths_pending = not self.settings.table_header_state
+        self.table.viewport().installEventFilter(self)
+        header.viewport().installEventFilter(self)
         table_layout.addWidget(self.table)
 
         # An empty list shows the drop zone instead of an empty grid.
@@ -3994,6 +4018,26 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         if self._run_dialog(dialog):
             dialog.apply_to(self.settings.match_conditions)
             self.settings.save()
+
+    def eventFilter(self, obj, event):
+        """Keeps the Queue's default column widths fitted to the viewport.
+
+        Until the user touches a column divider (or a saved layout is
+        restored) the widths are a share of the viewport, re-worked on
+        every resize: the first layout is not the final size, and a
+        maximised window should not leave the table short of its edge.
+        """
+        if self._default_widths_pending:
+            if obj is self.table.horizontalHeader().viewport():
+                if event.type() == QEvent.Type.MouseButtonPress:
+                    self._default_widths_pending = False
+            elif (obj is self.table.viewport() and event.type() == QEvent.Type.Resize
+                    and event.size().width() >= MIN_VIEWPORT_FOR_DEFAULT_WIDTHS):
+                thumb_width = THUMB_COLUMN_SIZE + 20
+                self.table.setColumnWidth(COL_THUMB, thumb_width)
+                for col, width in default_column_widths(event.size().width(), thumb_width).items():
+                    self.table.setColumnWidth(col, width)
+        return super().eventFilter(obj, event)
 
     def showEvent(self, event):
         """First real layout happens here - before this the table has no

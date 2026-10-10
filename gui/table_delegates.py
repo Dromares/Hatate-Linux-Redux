@@ -47,8 +47,18 @@ TAG_FONT_PX = 13
 _TAG_SOURCE = re.compile(r"^(\[[^\]]+\])\s(.*)$", re.DOTALL)
 
 
-class ChipDelegate(QStyledItemDelegate):
-    """Draws a cell's text as a glyph plus a weighted label."""
+def paint_row_rule(painter, cell, mode):
+    """The 1px hairline under a Queue row (Q-06). Drawn per cell, edge to
+    edge, rather than as a `QTableView::item` border: an item rule would
+    switch Qt to styled-item painting (see the module docstring)."""
+    painter.save()
+    painter.setPen(theme.ink_color(mode, "ink_18"))
+    painter.drawLine(cell.left(), cell.bottom(), cell.right(), cell.bottom())
+    painter.restore()
+
+
+class RuledRowDelegate(QStyledItemDelegate):
+    """The Queue table's default delegate: an ordinary cell plus the row rule."""
 
     def __init__(self, mode_getter, parent=None):
         super().__init__(parent)
@@ -56,6 +66,14 @@ class ChipDelegate(QStyledItemDelegate):
         # is open, and a delegate holding a copy would keep painting in
         # the old palette until something rebuilt it.
         self._mode_getter = mode_getter
+
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        paint_row_rule(painter, option.rect, self._mode_getter())
+
+
+class ChipDelegate(RuledRowDelegate):
+    """Draws a cell's text as a glyph plus a weighted label."""
 
     def paint(self, painter, option, index):
         key = index.data(CHIP_ROLE)
@@ -74,10 +92,11 @@ class ChipDelegate(QStyledItemDelegate):
         # selected row looking like every other selected row.
         style = opt.widget.style() if opt.widget is not None else QApplication.style()
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
+        mode = self._mode_getter()
+        paint_row_rule(painter, option.rect, mode)
         if not text:
             return
 
-        mode = self._mode_getter()
         if opt.state & QStyle.StateFlag.State_Selected:
             # The selection fill is stamp_bg, which is the very colour
             # ink_color() resolves every tier to (only the alpha differs),
