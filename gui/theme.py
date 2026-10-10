@@ -385,15 +385,17 @@ def stylesheet(mode):
             min-height: 1px;
     }}
 
-    /* ---- the interrupted-run notice (DAN-660, S-01) - the drop zone's
-       flat panel and hairline, with the dossier's corner marks laid over it
-       by widgets.Brackets, so it reads as the same frame the empty Queue
-       is drawn in. No new ink tier or glyph: RunBannerGlyph reuses
+    /* ---- the interrupted-run notice (DAN-660, S-01) - a flat panel with
+       the dossier's corner marks laid over it by widgets.Brackets, so it
+       reads as the same frame the empty Queue is drawn in. Its hairline
+       stays the border tier (ink_46, not the drop zone's decorative
+       ink_18): a notice's edge is a boundary the user has to see, and the
+       contrast sweep holds it to 3:1. No new ink tier or glyph: RunBannerGlyph reuses
        STATUS_GLYPHS['poor']/STATUS_WEIGHTS['poor'] exactly, which is why
        its colour is {ink_100} rather than a dedicated token. ---- */
     QFrame#RunBanner {{
             background: {card};
-            border: 1px solid {ink_18};
+            border: 1px solid {ink_46};
     }}
     QLabel#RunBannerGlyph {{
             font-family: '{glyph_font}', {font_sans};

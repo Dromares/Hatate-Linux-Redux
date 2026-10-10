@@ -239,7 +239,7 @@ class TestMetaLine(_InterruptedWindow):
     def _meta(self, win):
         labels = win.run_banner.findChildren(QLabel, "MetaLabel")
         figures = win.run_banner.findChildren(QLabel, "MetaFigure")
-        return [(a.text(), b.text()) for a, b in zip(labels, figures)]
+        return [(a.text(), b.text()) for a, b in zip(labels, figures, strict=True)]
 
     def test_it_reads_autosave_clean_exit_and_crash_log(self):
         for mode in MODES:
@@ -296,7 +296,7 @@ class TestActionsUnchanged(_InterruptedWindow):
                 win = self._window(mode)
                 frame = win.run_banner
 
-                def top_left(widget):
+                def top_left(widget, frame=frame):
                     return widget.mapTo(frame, widget.rect().topLeft())
 
                 resume, crash_log = frame.findChildren(QPushButton)
@@ -322,7 +322,7 @@ class TestActionsUnchanged(_InterruptedWindow):
                 img = win.run_banner.grab(rect).toImage()
                 card = _parse_hex(theme.palette(mode)["card"])
                 pixels = [_rgb(img, x, y) for x in range(img.width()) for y in range(img.height())]
-                loudest = max(pixels, key=lambda p: sum(abs(a - b) for a, b in zip(p, card)))
+                loudest = max(pixels, key=lambda p: sum(abs(a - b) for a, b in zip(p, card, strict=True)))
                 quiet = _ink_over(mode, "ink_65", over="card")
                 self.assertTrue(_near(loudest, quiet, tol=12), f"{mode}: {loudest} vs {quiet}")
 
