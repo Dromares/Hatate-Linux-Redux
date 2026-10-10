@@ -124,12 +124,15 @@ class _UppercaseChecks:
             self.assertTrue(_is_caps_mono(button), key)
             self.assertEqual(button.text(), label)
             self.assertEqual(button.toolTip(), tip)
+            self.assertEqual(button.sizeHint().height(), 38, key)  # DAN-1275: mockup tab fill
 
     def test_start_search(self):
         button = self.win.search_toggle_btn
         self.assertTrue(_is_caps_mono(button))
-        self.assertEqual(button.text(), "▶  Start Search")
+        self.assertEqual(button.text(), "▶ Start Search")
         self.assertGreaterEqual(button.height(), widgets.BUTTON_MIN_HEIGHT)
+        # DAN-1275: the mockup's button is 160px wide; ours is 160 +/- 4.
+        self.assertAlmostEqual(button.sizeHint().width(), 160, delta=4)
 
     def test_review_page_buttons(self):  # V-08
         self.win.set_mode("review")
@@ -158,14 +161,19 @@ class _UppercaseChecks:
             with self.subTest(button=text):
                 self.assertTrue(_is_caps_mono(button))
 
-    def test_filter_band_controls(self):  # Q-01 casing
+    def test_filter_band_controls(self):  # Q-01 casing, corrected by DAN-1275
         band = self.win.filter_bar
+        # Clear is a command: the page-level mono caps voice.
+        self.assertTrue(_is_caps_mono(band.filter_clear_button))
+        # The combos show state, not a command: mono and tracked like the
+        # mockup's `.field--button`, but sentence case (not AllUppercase).
         for button in (band.filter_status_button, band.filter_site_button,
-                       band.filter_upscale_button, band.filter_clear_button):
+                       band.filter_upscale_button):
             with self.subTest(button=button.text()):
-                self.assertTrue(_is_caps_mono(button))
-        # The string is untouched: the accessible name and any reader of
-        # `.text()` get sentence case.
+                font = _font(button)
+                self.assertEqual(font.family(), "JetBrains Mono")
+                self.assertGreater(font.letterSpacing(), 100)
+                self.assertNotEqual(font.capitalization(), CAPS)
         self.assertEqual(band.filter_status_button.text(), "Status: all")
         self.assertEqual(band.filter_clear_button.text(), "Clear")
 

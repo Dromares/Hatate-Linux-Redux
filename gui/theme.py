@@ -399,7 +399,7 @@ def stylesheet(mode):
     }}
     QLabel#RunBannerGlyph {{
             font-family: '{glyph_font}', {font_sans};
-            font-size: 20px;
+            font-size: 28px;
             color: {ink_100};
             background: transparent;
     }}
@@ -418,6 +418,8 @@ def stylesheet(mode):
             background: transparent;
     }}
     QLabel#RunBannerDiscard {{
+            font-family: {font_mono};
+            font-size: 12px;
             color: {ink_65};
             background: transparent;
     }}
@@ -638,7 +640,7 @@ def stylesheet(mode):
             background: {stamp_bg};
             color: {stamp_fg};
             border: none;
-            padding: 11px 26px;
+            padding: 11px 22px;
             font-size: 14px;
     }}
     /* Page-level buttons speak the mockup's mono caps voice. The
@@ -650,7 +652,7 @@ def stylesheet(mode):
             font-size: 12px;
             font-weight: 700;
     }}
-    QPushButton#Primary[voice="caps"] {{ font-size: 13px; }}
+    QPushButton#Primary[voice="caps"] {{ font-size: 12px; }}
     QPushButton#Primary:pressed {{ background: {stamp_bg}; }}
     QPushButton#Primary:disabled {{
             background: {ink_18};
@@ -718,7 +720,7 @@ def stylesheet(mode):
             background: transparent;
             color: {ink_65};
             border: 1px solid {ink_46};
-            padding: 8px 22px;
+            padding: 9px 22px;
             font-family: {font_mono};
             font-size: 13px;
             font-weight: 700;
@@ -765,6 +767,22 @@ def stylesheet(mode):
             font-family: {font_mono};
             font-size: 12px;
             font-weight: 700;
+    }}
+    /* The filter bar's combos (`.field--button`): they show state, not a
+       command, so they are mono and tracked but sentence case and regular
+       weight (DAN-1275). The drop-down arrow is centred at the right inset,
+       not left on Qt's bottom-right default. */
+    QToolButton[voice="field"] {{
+            font-family: {font_mono};
+            font-size: 12px;
+            padding-right: 28px;
+    }}
+    QToolButton[voice="field"]::menu-indicator {{
+            subcontrol-origin: padding;
+            subcontrol-position: center right;
+            right: 10px;
+            width: 8px;
+            height: 8px;
     }}
     QToolButton:hover {{ border-color: {ink_58}; }}
     QToolButton:disabled {{ color: {ink_45}; border-color: {ink_46}; }}

@@ -229,7 +229,7 @@ class ShellMixin:
         # Created here rather than in the status bar, which is where it
         # used to be.
         self.search_toggle_btn = widgets.pill_button(
-            "▶  Start Search", self.action_toggle_search, primary=True,
+            "▶ Start Search", self.action_toggle_search, primary=True,
         )
         row.addWidget(self.search_toggle_btn)
 

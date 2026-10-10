@@ -195,6 +195,17 @@ class TestVariantShown(_SurvivedWindow):
         self.assertEqual(win.ghost.glyph(), shell.GHOST_GLYPHS["queue"])
 
 
+class TestActionGap(_SurvivedWindow):
+    def test_the_three_actions_are_12px_apart(self):  # DAN-1275: `--space-3`, not Qt's 6
+        win = self._window("dark")
+        buttons = self._page(win).findChildren(QPushButton)
+        self.assertEqual(len(buttons), 3)
+        for left, right in zip(buttons, buttons[1:], strict=False):
+            gap = (right.mapTo(win, right.rect().topLeft()).x()
+                   - left.mapTo(win, left.rect().topRight()).x() - 1)
+            self.assertEqual(gap, 12, (left.text(), right.text()))
+
+
 class TestBoxedGlyph(_SurvivedWindow):
     def test_it_is_a_boxed_cross(self):
         for mode in MODES:

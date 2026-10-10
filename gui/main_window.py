@@ -141,7 +141,7 @@ PREVIEW_PIXMAP_CACHE_ENTRIES = 6     # at 2048px, ~75-100 MB worst case - the
                                      # still enough for stepping back and forth
 
 
-def _format_duration(seconds: float) -> str:
+def _format_duration(seconds: float, pad_minutes: bool = False) -> str:
     """Compact human-readable duration for progress estimates - '45s',
     '2m 30s', '1h 5m', '6d 4h'. Deliberately coarse: an estimate implying
     second-level precision would overstate how accurate it is.
@@ -149,6 +149,10 @@ def _format_duration(seconds: float) -> str:
     Days matter because a search run reaches them easily - at the default
     45-75s an image, any sizeable library is a multi-day run, and '389h'
     is a number nobody can read as a fortnight.
+
+    `pad_minutes` zero-pads the minutes that follow hours ('2h 09m'), as
+    the mockup's banner meta line does; the run strip and the ETA keep
+    '2h 9m'.
     """
     seconds = max(int(round(seconds)), 0)
     if seconds < 60:
@@ -158,7 +162,9 @@ def _format_duration(seconds: float) -> str:
         return f"{minutes}m {secs}s" if secs else f"{minutes}m"
     hours, mins = divmod(minutes, 60)
     if hours < 24:
-        return f"{hours}h {mins}m" if mins else f"{hours}h"
+        if not mins:
+            return f"{hours}h"
+        return f"{hours}h {mins:02d}m" if pad_minutes else f"{hours}h {mins}m"
     days, hrs = divmod(hours, 24)
     return f"{days}d {hrs}h" if hrs else f"{days}d"
 
@@ -921,6 +927,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         layout.addSpacing(18)
 
         buttons = QHBoxLayout()
+        buttons.setSpacing(widgets.BUTTON_ROW_SPACING)
         buttons.addStretch(1)
         buttons.addWidget(widgets.pill_button(
             "Add files…", self.action_add_files, primary=True))
@@ -1408,7 +1415,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         items = [("Crash log", crash_log)]
         age = saved_session_age_seconds()
         if age is not None:
-            items.append(("Last saved session", f"{_format_duration(age)} ago"))
+            items.append(("Last saved session", f"{_format_duration(age, pad_minutes=True)} ago"))
         panel, parts = widgets.nothing_survived(items, DROP_ZONE_BELOW_WEIGHT)
         parts['new_search_button'].clicked.connect(self._dismiss_nothing_survived)
         parts['crash_log_button'].clicked.connect(self._open_crash_log)
@@ -1442,10 +1449,10 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         items = []
         autosave_age = saved_session_age_seconds()
         if autosave_age is not None:
-            items.append(("Last autosave", f"{_format_duration(autosave_age)} ago"))
+            items.append(("Last autosave", f"{_format_duration(autosave_age, pad_minutes=True)} ago"))
         clean_exit_age = crashlog.last_clean_exit_age_seconds()
         if clean_exit_age is not None:
-            items.append(("Last clean exit", f"{_format_duration(clean_exit_age)} ago"))
+            items.append(("Last clean exit", f"{_format_duration(clean_exit_age, pad_minutes=True)} ago"))
         faults = crashlog.faults_in_previous_run()
         items.append(("Crash log", f"{_plural(faults, 'new entry', 'new entries')}"
                                    if faults else "no new entry"))
@@ -2444,7 +2451,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         self._run_active = False
         self._refresh_run_progress_label()
         self.status_label.setText("Search finished")
-        self.search_toggle_btn.setText("▶  Start Search")
+        self.search_toggle_btn.setText("▶ Start Search")
         self.search_toggle_btn.setEnabled(True)
 
     # ------------------------------------------------------------------
@@ -3254,7 +3261,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         self._run_active = True
         self._refresh_run_progress_label()
         self.worker.start()
-        self.search_toggle_btn.setText("■  Stop Search")
+        self.search_toggle_btn.setText("■ Stop Search")
         self.status_label.setText(f"{status_prefix} {len(entries)} image(s)…")
 
     def _show_rows_in_hydrus(self, entries: List[ImageEntry]):

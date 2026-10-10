@@ -172,6 +172,14 @@ class TestActions(_EmptyWindow):
             self.assertEqual(button.font().capitalization(),
                              QFont.Capitalization.AllUppercase, button.text())
 
+    def test_the_actions_are_12px_apart(self):  # DAN-1275: `--space-3`, not Qt's 6
+        win = self._window("dark")
+        buttons = self._zone(win).findChildren(QPushButton)
+        for left, right in zip(buttons, buttons[1:], strict=False):
+            gap = (right.mapTo(win, right.rect().topLeft()).x()
+                   - left.mapTo(win, left.rect().topRight()).x() - 1)
+            self.assertEqual(gap, 12, (left.text(), right.text()))
+
 
 class TestEmptyGhost(_EmptyWindow):
     """G-07's last piece: the Empty page's own watermark."""
