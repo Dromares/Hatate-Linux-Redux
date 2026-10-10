@@ -29,6 +29,7 @@ SPLITTER_HANDLE = 12
 INPUT_MIN_HEIGHT = 38     # a single-line edit crushed below this stops being readable
 BUTTON_MIN_HEIGHT = 40    # tokens.css's page-level button, plus the 36px boxed icon below
 ICON_BOX = 36
+SURVIVED_GLYPH_BOX = 42   # the mockup's boxed ✕: a 32px glyph in a hairline square
 
 
 def card(title=None, framed=True):
@@ -142,6 +143,114 @@ def run_banner():
         'resume_button': resume_button,
         'crash_log_button': crash_log_button,
         'discard_label': discard_label,
+    }
+
+
+def meta_line(items):
+    """The mockup's `.run-banner__meta`: a mono-caps row of `label  FIGURE`
+    pairs, the figure bright and bold against its dim label.
+
+    A QLabel can only do that with inline colours, which would pin it to
+    one theme, so each run is its own label (the same shape as the run
+    strip's `Readout`). `items` is `[(label, figure), ...]`; returns the
+    row widget and its flat list of labels, in order.
+    """
+    row = QWidget()
+    row.setObjectName('MetaLine')
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(24)
+    layout.addStretch(1)
+    labels = []
+    for label_text, figure_text in items:
+        pair = QHBoxLayout()
+        pair.setSpacing(6)
+        for text, name in ((label_text, 'MetaLabel'), (figure_text, 'MetaFigure')):
+            label = QLabel(text)
+            label.setObjectName(name)
+            uppercase_voice(label, 0.08)
+            pair.addWidget(label)
+            labels.append(label)
+        layout.addLayout(pair)
+    layout.addStretch(1)
+    return row, labels
+
+
+def nothing_survived(meta_items, below_weight):
+    """The Queue's "Nothing survived." variant of the empty state (S-05).
+
+    An unclean shutdown whose saved session came back empty: the same
+    bracketed frame as the drop zone, but the block says what happened -
+    a boxed ✕, a headline, why there is nothing to recover, a meta line,
+    and three actions. Returns the frame and its parts; the caller wires
+    the buttons, since it knows what they do.
+
+    `below_weight` is the drop zone's top-weighting (E-03), so the two
+    variants put their block at the same height and the page does not
+    jump when one replaces the other.
+    """
+    panel = QFrame()
+    panel.setObjectName('DropZone')
+    layout = QVBoxLayout(panel)
+    layout.setContentsMargins(32, 24, 32, 24)
+    section = section_label("01 // Queue")
+    layout.addWidget(section, 0, Qt.AlignmentFlag.AlignLeft)
+    layout.addStretch(1)
+
+    glyph = QLabel("\u2715")
+    glyph.setObjectName('SurvivedGlyph')
+    glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    glyph.setFixedSize(SURVIVED_GLYPH_BOX, SURVIVED_GLYPH_BOX)
+    layout.addWidget(glyph, 0, Qt.AlignmentFlag.AlignHCenter)
+    layout.addSpacing(16)
+
+    title = display_title("Nothing survived.")
+    title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    layout.addWidget(title)
+    layout.addSpacing(6)
+
+    body = hint(
+        "Hatate stopped without a clean exit, and the session it had saved was "
+        "empty or could not be read, so there is no queue to restore. Anything "
+        "already sent to Hydrus is unaffected."
+    )
+    body.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    # A fixed width inside a stretch row - see MainWindow._build_drop_zone
+    # for why a word-wrapped label is not handed an alignment instead.
+    body.setFixedWidth(560)
+    body_row = QHBoxLayout()
+    body_row.addStretch(1)
+    body_row.addWidget(body)
+    body_row.addStretch(1)
+    layout.addLayout(body_row)
+    layout.addSpacing(12)
+
+    meta, meta_labels = meta_line(meta_items)
+    layout.addWidget(meta)
+    layout.addSpacing(18)
+
+    new_search = pill_button("Start new search", primary=True)
+    crash_log = pill_button("View crash log")
+    add_files = pill_button("Add files\u2026")
+    buttons = QHBoxLayout()
+    buttons.addStretch(1)
+    for button in (new_search, crash_log, add_files):
+        buttons.addWidget(button)
+    buttons.addStretch(1)
+    layout.addLayout(buttons)
+
+    layout.addStretch(below_weight)
+    Brackets(panel)
+    return panel, {
+        'section': section,
+        'glyph': glyph,
+        'title': title,
+        'body': body,
+        'meta': meta,
+        'meta_labels': meta_labels,
+        'new_search_button': new_search,
+        'crash_log_button': crash_log,
+        'add_files_button': add_files,
     }
 
 

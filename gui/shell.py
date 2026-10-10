@@ -49,6 +49,8 @@ GAUGE_HEIGHT = 2
 # What the strip says when no run has anything to report (R-05).
 IDLE_PROGRESS = "nothing queued"
 IDLE_ETA = "ETA —"
+# What the strip says after a run that left nothing behind (R-06).
+RUN_FAILED_NOTE = "last run failed — see crash log"
 
 # A "figure" in a readout: the part the mockup sets in bold (`<b>7/8</b>
 # searched`, `waiting <b>38s</b>`, `ETA <b>~2 min</b>`). A number with the
@@ -304,6 +306,12 @@ class ShellMixin:
             "Hydrus, which is counted separately."
         )
         row.addWidget(self.run_progress_label)
+
+        # A note about the run as a whole rather than a count - R-06's
+        # `last run failed - see crash log`, and P12a's `stopped 2h 14m
+        # ago`. Empty (and so out of the way) until something sets it.
+        self.run_note_label = Readout()
+        row.addWidget(self.run_note_label)
 
         self.sent_count_label = Readout()
         self.sent_count_label.setToolTip(
