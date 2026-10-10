@@ -3650,10 +3650,13 @@ class TestFilteredRowsAreNeverActedOnByAccident(GuiTestCase):
         """A list silently showing a third of itself is how someone
         concludes the app lost their work."""
         self._filter_to_gelbooru()
-        text = self.win.filter_bar.filter_count_label.text()
-        self.assertIn("3", text)
-        self.assertIn("6", text)
-        self.assertIn("hidden", text)
+        # U4 (DAN-1277): the bar reads "3 hidden"; the "3 of 6 ... hidden,
+        # not removed" sentence moved to its tooltip, so the full claim
+        # is still asserted, just on the tooltip.
+        label = self.win.filter_bar.filter_count_label
+        self.assertEqual(label.text(), "3 hidden")
+        self.assertIn("3 of 6", label.toolTip())
+        self.assertIn("hidden, not removed", label.toolTip())
 
     def test_no_count_is_shown_when_nothing_is_filtered(self):
         self.assertEqual(self.win.filter_bar.filter_count_label.text(), "")

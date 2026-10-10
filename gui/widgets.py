@@ -12,7 +12,8 @@ from PyQt6.QtCore import QEvent, QPoint, QRect, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QFontMetrics, QPainter, QPixmap, QRegion
 from PyQt6.QtWidgets import (
     QButtonGroup, QComboBox, QFrame, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
+    QLabel, QLineEdit, QPushButton, QStyle, QStyleOptionComboBox, QStylePainter,
+    QVBoxLayout, QWidget,
 )
 
 from gui import theme
@@ -24,6 +25,14 @@ TRACKING_LABEL = 0.16  # transcribed from tokens.css's --tracking-label
 CARD_MARGINS = (18, 16, 18, 16)
 CARD_SPACING = 10
 PAGE_MARGINS = (22, 18, 22, 18)
+# The main window's own page gutter (U3 / DAN-1277): tokens.css's `.app`
+# pads `var(--space-6)` left and right, and the menubar and status bar are
+# inset by the same 32. Dialogs keep PAGE_MARGINS; they are not screens.
+PAGE_GUTTER = 32
+SHELL_MARGINS = (PAGE_GUTTER, 18, PAGE_GUTTER, 18)
+MENUBAR_HEIGHT = 28       # `.menubar`: 28px with its hairline, DAN-1158 B-1
+STATUSBAR_ITEM_INSET = 2  # what QStatusBar itself puts left of its first item
+STATUSBAR_HEIGHT = 24     # `.statusbar`: 24px with its top rule, B-2
 PAGE_SPACING = 14
 SPLITTER_HANDLE = 12
 INPUT_MIN_HEIGHT = 38     # a single-line edit crushed below this stops being readable
@@ -386,6 +395,26 @@ def pill_button(text, on_click=None, primary=False, uppercase=True):
         button.setProperty('voice', 'caps')
         button.setMinimumHeight(BUTTON_MIN_HEIGHT)
         uppercase_voice(button)
+    if on_click is not None:
+        button.clicked.connect(on_click)
+    return button
+
+
+def link_button(text, on_click=None):
+    """An action drawn as an underlined mono-caps label, not a button: the
+    mockup's filter-bar `Clear`. No border, no fill - the underline is the
+    affordance, and the stylesheet's disabled tier is what says "nothing to
+    clear". The underline is on the QFont, so the accessible name is still
+    plain `text`.
+    """
+    button = QPushButton(text)
+    button.setObjectName('LinkButton')
+    button.setFlat(True)
+    button.setCursor(Qt.CursorShape.PointingHandCursor)
+    uppercase_voice(button)
+    font = button.font()
+    font.setUnderline(True)
+    button.setFont(font)
     if on_click is not None:
         button.clicked.connect(on_click)
     return button
@@ -763,6 +792,53 @@ class WideComboBox(QComboBox):
         if needed_width > self.view().minimumWidth():
             self.view().setMinimumWidth(needed_width)
         super().showPopup()
+
+
+class CandidatePicker(WideComboBox):
+    """The Review rail's match picker (U6): one mono line that ends in an
+    ellipsis when it does not fit, and a visible chevron.
+
+    Qt clips a closed combo's text hard at the edge, and the stylesheet's
+    drop-down box (which has no arrow image) paints nothing, so both are
+    drawn here. The popup is untouched and still lists the full text.
+    """
+
+    HEIGHT = 32          # `.picker`: height 32px
+    CHEVRON = "\u25be"   # the mockup's ▾
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("CandidatePicker")
+        self.setFixedHeight(self.HEIGHT)
+
+    def elided_text(self):
+        """What the closed picker shows for the current item."""
+        option = self._option()
+        edit = self.style().subControlRect(
+            QStyle.ComplexControl.CC_ComboBox, option,
+            QStyle.SubControl.SC_ComboBoxEditField, self)
+        return self.fontMetrics().elidedText(
+            self.currentText(), Qt.TextElideMode.ElideRight, edit.width())
+
+    def _option(self):
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        return option
+
+    def paintEvent(self, event):
+        painter = QStylePainter(self)
+        option = self._option()
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, option)
+        option.currentText = self.elided_text()
+        painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, option)
+        arrow = self.style().subControlRect(
+            QStyle.ComplexControl.CC_ComboBox, option,
+            QStyle.SubControl.SC_ComboBoxArrow, self)
+        painter.setPen(self.palette().color(self.palette().ColorRole.ButtonText))
+        font = painter.font()
+        font.setPixelSize(15)   # the 11px label size reads as a speck
+        painter.setFont(font)
+        painter.drawText(arrow, Qt.AlignmentFlag.AlignCenter, self.CHEVRON)
 
 
 class ScaledImageLabel(QLabel):

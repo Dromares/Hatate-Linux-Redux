@@ -603,6 +603,16 @@ def stylesheet(mode):
     QComboBox:hover {{ border: 1px solid {ink_58}; }}
     QComboBox:disabled {{ color: {ink_45}; }}
     QComboBox::drop-down {{ border: none; width: 22px; }}
+    /* The Review rail's match picker (U6): the mockup's `.picker`, mono and
+       one line. The text is elided and the chevron drawn by
+       widgets.CandidatePicker; the height is fixed there. */
+    QComboBox#CandidatePicker {{
+            font-family: {font_mono};
+            font-size: 11px;
+            padding: 0 0 0 12px;
+            min-width: 0;
+    }}
+    QComboBox#CandidatePicker::drop-down {{ border: none; width: 28px; }}
     QComboBox QAbstractItemView {{
             background: {card_alt};
             border: 1px solid {ink_46};
@@ -670,6 +680,26 @@ def stylesheet(mode):
             background: {card_alt};
             border-color: {ink_46};
     }}
+
+    /* The filter bar's "N hidden" (U4). The mockup draws it at ink_45; that
+       tier is under 4.5:1 as text, so it takes the label tier instead. */
+    QLabel#FilterCount {{
+            background: transparent;
+            color: {ink_65};
+            font-family: {font_mono};
+            font-size: 11px;
+    }}
+    /* The filter bar's `Clear` (U4): an underlined mono label, no box. */
+    QPushButton#LinkButton {{
+            background: transparent;
+            border: none;
+            padding: 0 4px;
+            color: {ink_65};
+            font-family: {font_mono};
+            font-size: 11px;
+    }}
+    QPushButton#LinkButton:hover {{ color: {ink_100}; }}
+    QPushButton#LinkButton:disabled {{ color: {ink_45}; border: none; }}
 
     QPushButton#IconButton {{
             border: none;
@@ -787,8 +817,20 @@ def stylesheet(mode):
     QMenu::separator {{ height: 1px; background: {ink_18}; margin: 5px 8px; }}
     QMenu::indicator {{ width: 14px; height: 14px; left: 8px; }}
 
-    QMenuBar {{ background: {page}; color: {ink_100}; border: none; }}
-    QMenuBar::item {{ background: transparent; padding: 6px 12px; }}
+    /* The native menubar is window chrome (B-1 / C-3): only its font, its
+       height (set in MainWindow._build_menu) and the hairline under it are
+       styled - 13px sans, items 24px apart, first one on the page gutter.
+       The popups above are the platform's own and stay as they are. */
+    QMenuBar {{
+            background: {page};
+            color: {ink_100};
+            border: none;
+            border-bottom: 1px solid {ink_18};
+            font-size: 13px;
+            padding-left: 20px;
+            spacing: 0;
+    }}
+    QMenuBar::item {{ background: transparent; padding: 4px 12px; }}
     QMenuBar::item:selected {{ background: {card_alt}; }}
 
     /* ---- tabs ---- */
@@ -961,7 +1003,14 @@ def stylesheet(mode):
     /* Deliberately quiet (DAN-241): passive single-label strip, no interactive affordance; page bg matches the content above it with no discontinuity to bridge, and the status bar's fixed window position does the framing. Same reasoning as QGroupBox. */
     QStatusBar {{ background: {page}; color: {ink_65}; border-top: 1px solid {ink_18}; }}
     QStatusBar::item {{ border: none; }}
-    QStatusBar QLabel {{ background: transparent; }}
+    /* U2: 10px mono, dim, as the mockup's `.statusbar`. The label would
+       otherwise inherit the page's ink_100 and read as body text. */
+    QStatusBar QLabel {{
+            background: transparent;
+            color: {ink_65};
+            font-family: {font_mono};
+            font-size: 10px;
+    }}
 
     /* ---- splitter handles: visible, but calm ---- */
     QSplitter::handle {{ background: transparent; }}

@@ -523,6 +523,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
     # ------------------------------------------------------------------
     def _build_menu(self):
         menubar = self.menuBar()
+        menubar.setFixedHeight(widgets.MENUBAR_HEIGHT)
 
         files_menu = menubar.addMenu("&Files")
         add_files_action = QAction("Add Files…", self)
