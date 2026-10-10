@@ -46,6 +46,16 @@ except ImportError:  # pragma: no cover - depends on environment
 _app = None
 
 
+def flush_deferred_deletes():
+    """Deliver the ``deleteLater()`` calls a test's cleanups queued.
+
+    ``processEvents()`` skips DeferredDelete and nothing here runs the real
+    event loop, so a queued delete otherwise never happens."""
+    if HAVE_QT:
+        from PyQt6.QtCore import QCoreApplication, QEvent
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
 def setUpModule():
     """One QApplication for the whole module - Qt allows only one."""
     global _app
@@ -96,6 +106,12 @@ class GuiTestCase(unittest.TestCase):
             session_module.SESSION_DB = orig_session_db
             session_db_module.SESSION_DB = orig_db_path
             shutil.rmtree(tmp_dir, ignore_errors=True)
+            # DAN-1256: the addCleanup(win.deleteLater) calls only *queue*
+            # the delete; with no event loop running it is never delivered,
+            # so every MainWindow stayed alive for the rest of the run.
+            # This module alone left ~43,000 widgets behind, and every later
+            # app.setStyleSheet() re-polished all of them.
+            flush_deferred_deletes()
 
 
 @unittest.skipUnless(HAVE_QT, "PyQt6 not installed")
@@ -366,11 +382,16 @@ class TestEngineAlertsReachTheUser(GuiTestCase):
     def _dismiss_boxes(self, parent):
         """Close whatever modal box the next call puts up, so exec()
         returns instead of hanging the suite."""
+        from PyQt6 import sip
         from PyQt6.QtCore import QTimer
         from PyQt6.QtWidgets import QMessageBox
         shown = []
 
         def close_them():
+            # When no box appears this timer outlives the test, and fires in
+            # whichever later event loop runs - by then the parent is gone.
+            if sip.isdeleted(parent):
+                return
             for box in parent.findChildren(QMessageBox):
                 shown.append((box.text(), box.detailedText()))
                 box.done(QMessageBox.StandardButton.Ok)
@@ -6677,3 +6698,36 @@ class TestRemovalKeepsYourPlace(_HydrusSendBase):
         self._select(2)
         self.win._remove_entries([self.entries[2]], reason="deleted from Hydrus")
         self.assertEqual(self.win._current_entry().filename, "send-1.png")
+
+
+@unittest.skipUnless(HAVE_QT, "PyQt6 not installed")
+class TestFinishedTestsReleaseTheirWidgets(unittest.TestCase):
+    """REGRESSION (DAN-1256): CI's test step went from 5 to 47 minutes.
+    `addCleanup(win.deleteLater)` only queues the delete, and nothing in the
+    suite runs an event loop, so every window a test built lived to the end
+    of the run - test_gui_smoke alone left ~43,000 widgets, and each later
+    `app.setStyleSheet()` re-polished every one of them (a 0.7s module took
+    40s). A finished test must leave the widget count where it found it."""
+
+    def _leaked_by(self, case_cls):
+        before = len(QApplication.instance().allWidgets())
+        case_cls().run(unittest.TestResult())
+        return len(QApplication.instance().allWidgets()) - before
+
+    def test_a_gui_test_case_does_not_leave_a_queued_delete_pending(self):
+        from PyQt6.QtWidgets import QWidget
+
+        class Inner(GuiTestCase):
+            def runTest(self):
+                self.addCleanup(QWidget().deleteLater)
+
+        self.assertEqual(self._leaked_by(Inner), 0)
+
+    def test_a_themed_window_does_not_outlive_its_test(self):
+        from .test_gui_harness import make_themed_window
+
+        class Inner(unittest.TestCase):
+            def runTest(self):
+                make_themed_window(self)
+
+        self.assertEqual(self._leaked_by(Inner), 0)
