@@ -51,7 +51,8 @@ from core.saucenao import (
     get_last_quota, get_quota_pause_state, reset_daily_limit_flag,
 )
 from core.session import (
-    clear_session, has_saved_session, load_session, save_session, session_entry_count,
+    clear_session, has_saved_session, load_session, save_session, saved_session_age_seconds,
+    session_entry_count,
 )
 from core.similarity_display import similarity_label
 from core.sites import ALL_SITE_OPTIONS
@@ -59,7 +60,7 @@ from core.viewport import entries_needing_thumbnails, visible_range_with_buffer
 from core.tag_colors import get_tag_color
 from core.tag_rules import apply_inline_edit
 from gui import theme, widgets
-from gui.shell import EMPTY_GHOST_GLYPH, IDLE_ETA, IDLE_PROGRESS, ShellMixin
+from gui.shell import EMPTY_GHOST_GLYPH, IDLE_ETA, IDLE_PROGRESS, RUN_FAILED_NOTE, ShellMixin
 from gui.review_view import ReviewViewMixin
 from gui.activity_view import ActivityViewMixin
 from gui.table_delegates import ChipDelegate
@@ -885,7 +886,15 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         stack = getattr(self, "queue_stack", None)
         if stack is None:
             return
-        stack.setCurrentIndex(0 if self.entries else 1)
+        if self.entries:
+            # Something to show: the notice has done its job, and a later
+            # emptied list is an ordinary empty one.
+            self._dismiss_nothing_survived()
+        panel = getattr(self, "_nothing_survived_page", None)
+        if self.entries:
+            stack.setCurrentIndex(0)
+        else:
+            stack.setCurrentWidget(panel if panel is not None else stack.widget(1))
         # The Empty page has its own watermark (G-07: 空 where the list is
         # 力); only restyle it while Queue is the page on show.
         if self.current_mode() == "queue":
@@ -1281,9 +1290,12 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         entries = load_session()
         if not entries:
             if had_session_file and self._unclean_shutdown:
+                # The status-bar line stays (G-06): a transient message
+                # needs a home even once the page itself says it.
                 self.status_label.setText(
                     "Run interrupted — nothing survived from the last session"
                 )
+                self._show_nothing_survived()
             return
         if session_db.SESSION_DB.exists():
             # Taken before anything touches the entries: whatever changes
@@ -1320,6 +1332,44 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
             self._schedule_viewport_thumbnails("session restored")
         else:
             self._start_thumbnail_generation(entries)
+
+    def _show_nothing_survived(self):
+        """Replaces the Queue's drop zone with the "Nothing survived."
+        variant (S-05) and says so on the run strip (R-06).
+
+        Built here rather than with the page, because its meta line reads
+        what is on disk at this moment: how long ago the session was last
+        saved, and how many faults the crashed run left in crash.log.
+        """
+        faults = crashlog.faults_in_previous_run()
+        crash_log = (f"{faults} new entr{'y' if faults == 1 else 'ies'}"
+                     if faults else "no new entry")
+        items = [("Crash log", crash_log)]
+        age = saved_session_age_seconds()
+        if age is not None:
+            items.append(("Last saved session", f"{_format_duration(age)} ago"))
+        panel, parts = widgets.nothing_survived(items, DROP_ZONE_BELOW_WEIGHT)
+        parts['new_search_button'].clicked.connect(self._dismiss_nothing_survived)
+        parts['crash_log_button'].clicked.connect(self._open_crash_log)
+        parts['add_files_button'].clicked.connect(self.action_add_files)
+        self._nothing_survived_parts = parts
+        self._nothing_survived_page = panel
+        self.queue_stack.addWidget(panel)
+        self.run_note_label.setText(RUN_FAILED_NOTE)
+        self._refresh_queue_empty_state()
+
+    def _dismiss_nothing_survived(self):
+        """Back to the ordinary drop zone: the notice has been read, and
+        the strip's "last run failed" belongs to the run it described."""
+        panel = getattr(self, "_nothing_survived_page", None)
+        if panel is None:
+            return
+        self._nothing_survived_page = None
+        self._nothing_survived_parts = None
+        self.queue_stack.removeWidget(panel)
+        panel.deleteLater()
+        self.run_note_label.setText("")
+        self._refresh_queue_empty_state()
 
     def _show_run_banner(self, entries: List[ImageEntry]):
         """Populates and shows the Queue page's crash-recovery banner

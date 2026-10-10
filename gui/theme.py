@@ -423,6 +423,32 @@ def stylesheet(mode):
     }}
     QLabel#RunBannerDiscard:hover {{ color: {ink_100}; }}
 
+    /* "Nothing survived." (S-05): the boxed ✕ and the meta line under the
+       prose. The box is the border tier (ink_46), the ✕ the loudest ink -
+       the most severe status, as the run banner draws it. */
+    QLabel#SurvivedGlyph {{
+            font-family: {font_mono};
+            font-size: 22px;
+            font-weight: 700;
+            color: {ink_100};
+            background: transparent;
+            border: 1px solid {ink_46};
+    }}
+    QWidget#MetaLine {{ background: transparent; }}
+    QLabel#MetaLabel {{
+            font-family: {font_mono};
+            font-size: 11px;
+            color: {ink_65};
+            background: transparent;
+    }}
+    QLabel#MetaFigure {{
+            font-family: {font_mono};
+            font-size: 11px;
+            font-weight: 700;
+            color: {ink_100};
+            background: transparent;
+    }}
+
     QLabel#Heading {{
             font-family: {font_serif};
             font-size: 17px;
