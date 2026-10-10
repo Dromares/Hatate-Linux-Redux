@@ -21,13 +21,14 @@ during a crash is worse than none.
 from __future__ import annotations
 
 import faulthandler
+import re
 import sys
 import threading
 import time
 import traceback
 from pathlib import Path
 
-from .applog import get_logger
+from .applog import LOG_FILE, get_logger
 from .paths import CONFIG_DIR
 
 log = get_logger("crash")
@@ -49,6 +50,23 @@ _installed = False
 # is crash.log's job, when faulthandler or the exception hooks below got a
 # chance to run at all).
 RUNNING_MARKER = CONFIG_DIR / "crash.log.running"
+
+# When the last clean shutdown finished, for the interrupted-run banner's
+# "last clean exit" (S-01). The running marker cannot say: it is removed
+# on a clean exit, so a crash finds it present and the time of the exit
+# before it is gone. Written by mark_clean_shutdown; absent until the
+# first clean exit after an upgrade, which reads as "not known".
+CLEAN_EXIT_FILE = CONFIG_DIR / "last_clean_exit"
+
+# How much of app.log previous_run_stopped_at() reads from the end: enough
+# to cover the crashed run's last lines and this run's startup, never the
+# whole 2 MB file.
+_LOG_TAIL_BYTES = 64_000
+_LOG_STAMP = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) \[")
+_LOG_STAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
+# setup_logging()'s first line of every run: the boundary between the
+# crashed run's lines and this one's.
+_LOG_RUN_START = "Logging started, writing to"
 
 # How much of crash.log to show in the log viewer. It is appended to for
 # the life of CONFIG_DIR, potentially across years of runs; a fault is
@@ -105,6 +123,10 @@ def mark_clean_shutdown() -> None:
         pass
     except OSError as exc:
         log.warning("Could not clear the running marker: %s", exc)
+    try:
+        CLEAN_EXIT_FILE.write_text(str(time.time()), encoding="utf-8")
+    except OSError as exc:
+        log.warning("Could not record the clean exit: %s", exc)
 
 
 def get_crash_log_path() -> str:
@@ -143,6 +165,52 @@ def faults_in_previous_run(path=None) -> int:
     if len(sections) < 3:
         return 0
     return sum(1 for line in sections[-2].splitlines() if line.startswith(FAULT_HEADER))
+
+
+def last_clean_exit_age_seconds(path=None):
+    """How long ago the last clean shutdown finished, or None if none was
+    ever recorded (a fresh install, or the first crash after the record
+    began - it cannot be reconstructed, so it is not guessed)."""
+    try:
+        stamp = float(Path(path or CLEAN_EXIT_FILE).read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return max(time.time() - stamp, 0.0)
+
+
+def previous_run_stopped_at(path=None):
+    """When the run BEFORE this one last wrote to app.log - the nearest
+    thing to "when it stopped" that a crash leaves behind - as epoch
+    seconds, or None if app.log cannot say.
+
+    A SIGKILL or a power cut records nothing at the moment of the fault, so
+    the last log line is a lower bound, not the instant itself. Read from
+    the line before this run's own "Logging started", which setup_logging()
+    has already written by the time anything asks.
+    """
+    try:
+        with open(path or LOG_FILE, "rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            fh.seek(max(size - _LOG_TAIL_BYTES, 0))
+            lines = fh.read().decode("utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    this_run = None
+    for index in range(len(lines) - 1, -1, -1):
+        if _LOG_RUN_START in lines[index]:
+            this_run = index
+            break
+    if this_run is None:
+        return None
+    for line in reversed(lines[:this_run]):
+        match = _LOG_STAMP.match(line)
+        if match:
+            try:
+                return time.mktime(time.strptime(match.group(1), _LOG_STAMP_FORMAT))
+            except (ValueError, OverflowError):
+                return None
+    return None
 
 
 def _install_faulthandler() -> None:

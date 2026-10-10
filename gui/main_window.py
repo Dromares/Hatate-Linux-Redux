@@ -69,7 +69,7 @@ from gui.add_tags_dialog import AddTagsDialog
 # with the model, but the sort keys here (and the GUI tests) still import
 # them from this module.
 from gui.image_table_model import (  # noqa: F401
-    COLUMNS, COL_SENT, COL_SIMILARITY, COL_STATUS, ImageTableModel, header_layout_is_usable,
+    COLUMNS, COL_ENGINE, COL_SENT, COL_SIMILARITY, COL_STATUS, ImageTableModel, header_layout_is_usable,
     sort_key_for_column, _entry_cache_label, _entry_engine_label,
     _entry_sent_label, _entry_size_delta_label, _size_delta_weight,
 )
@@ -131,6 +131,7 @@ THUMB_ICON_CACHE_ENTRIES = 4000      # ~36 MB worst case
 # "the headers are missing" rather than as a layout problem.
 MIN_COLUMN_WIDTH = 24
 DEFAULT_COLUMN_WIDTH = 90
+ENGINE_COLUMN_WIDTH = 120
 
 THUMB_VIEWPORT_BUFFER_ROWS = 15
 # Scroll events fire continuously; coalesce a burst into one pass.
@@ -160,6 +161,55 @@ def _format_duration(seconds: float) -> str:
         return f"{hours}h {mins}m" if mins else f"{hours}h"
     days, hrs = divmod(hours, 24)
     return f"{days}d {hrs}h" if hrs else f"{days}d"
+
+
+def _mark_interrupted_mid_search(entries) -> int:
+    """Finds the row(s) the previous run was searching when it died (S-02).
+
+    An autosave that landed mid-search saved that row as Searching, and
+    nothing is searching it now - so it is set back to unsearched, which is
+    what it is, where Resume Queue will pick it up (it only takes
+    unsearched rows) and flagged so the Engine cell can say what happened
+    to it. A search is one image at a time, so this is usually one row.
+    """
+    marked = 0
+    for entry in entries:
+        if entry.status == MatchStatus.SEARCHING:
+            entry.status = MatchStatus.NOT_SEARCHED
+            entry.interrupted_mid_search = True
+            marked += 1
+    return marked
+
+
+def _plural(count: int, singular: str, plural: Optional[str] = None) -> str:
+    return f"{count} {singular if count == 1 else (plural or singular + 's')}"
+
+
+def _interrupted_prose(entries) -> str:
+    """The banner's reassurance, with the counts that earn it (S-01).
+
+    The categories are the ones the table already tracks - sent and still
+    queued as `_refresh_sent_count_label` splits them, waiting as
+    `needs_review` among the rows with a match, never reached as unsearched. A queued count of zero is
+    left out rather than said: "0 are still queued" is noise in a message
+    whose job is to calm.
+    """
+    total = len(entries)
+    sent = sum(1 for e in entries if e.sent_to_hydrus and e.hydrus_import_confirmed)
+    queued = sum(1 for e in entries if e.sent_to_hydrus and not e.hydrus_import_confirmed)
+    waiting = sum(1 for e in entries if e.needs_review
+                  and e.status in (MatchStatus.GOOD, MatchStatus.POOR))
+    unreached = sum(1 for e in entries if e.status == MatchStatus.NOT_SEARCHED)
+    parts = [f"{sent} of {_plural(total, 'image')} {'is' if total == 1 else 'are'} already sent to Hydrus"]
+    if queued:
+        parts.append(f"{queued} {'is' if queued == 1 else 'are'} still queued with Hydrus")
+    parts.append(f"{waiting} {'is' if waiting == 1 else 'are'} decided and waiting for your review")
+    parts.append(f"{unreached} {'was' if unreached == 1 else 'were'} never reached")
+    counts = ", ".join(parts[:-1]) + ", and " + parts[-1]
+    return (
+        "Hatate did not exit cleanly during this run. Everything up to the "
+        f"last autosave is safe. {counts}."
+    )
 
 
 def _format_finish_time(seconds_from_now: float, now: Optional[datetime] = None) -> str:
@@ -729,6 +779,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         self.run_banner, banner_parts = widgets.run_banner()
         self.run_banner.setVisible(False)
         self._run_banner_body = banner_parts['body']
+        self._run_banner_meta_slot = banner_parts['meta_slot']
         banner_parts['resume_button'].clicked.connect(self.action_start_search)
         banner_parts['crash_log_button'].clicked.connect(self._open_crash_log)
         banner_parts['discard_label'].clicked.connect(self.action_clear_session)
@@ -775,6 +826,12 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         # default section width "Unsearched" elides to "Unsearc…",
         # which is the first thing a new list is full of.
         self.table.setColumnWidth(COL_STATUS, 130)
+        # And for "— interrupted mid-search" (S-02), the longest thing this
+        # column ever says: at the default width it wraps to three lines in
+        # a one-line row, at this one to two ("— interrupted" / "mid-search":
+        # a little wider and it breaks at the hyphen instead). Any wider and
+        # the last column leaves a 1440px window.
+        self.table.setColumnWidth(COL_ENGINE, ENGINE_COLUMN_WIDTH)
         self.table.setIconSize(QSize(THUMB_COLUMN_SIZE, THUMB_COLUMN_SIZE))
         self.table.verticalHeader().setDefaultSectionSize(THUMB_COLUMN_SIZE + 8)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -1302,6 +1359,10 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
             # from here on bumps a revision and is written by the next
             # autosave, and nothing else needs to be.
             self._autosaver.mark_saved(session_db.revisions_of(entries))
+        if self._unclean_shutdown:
+            # After mark_saved on purpose: this change is meant to reach
+            # disk, or a second crash would restore the same stale row.
+            _mark_interrupted_mid_search(entries)
         self._register_new_entries(entries)
         self.entries.extend(entries)
         self._refresh_table()
@@ -1372,18 +1433,36 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         self._refresh_queue_empty_state()
 
     def _show_run_banner(self, entries: List[ImageEntry]):
-        """Populates and shows the Queue page's crash-recovery banner
-        (DAN-660) for an unclean-shutdown restore that brought something
-        back. Per-category counts read the same per-row status the table
-        already tracks - no new counting logic, matching
-        _refresh_sent_count_label's own sent/queued split plus the
-        unsearched count action_start_search already computes."""
-        sent = sum(1 for e in entries if e.sent_to_hydrus and e.hydrus_import_confirmed)
-        queued = sum(1 for e in entries if e.sent_to_hydrus and not e.hydrus_import_confirmed)
-        unsearched = sum(1 for e in entries if e.status == MatchStatus.NOT_SEARCHED)
-        self._run_banner_body.setText(
-            f"{sent} sent, {queued} still queued, {unsearched} not yet searched"
-        )
+        """Populates and shows the Queue page's interrupted-run banner
+        (DAN-660, S-01) for an unclean-shutdown restore that brought
+        something back: the reassuring prose with its counts, the meta line
+        of what is on disk, and `stopped Xh Ym ago` on the run strip (R-06).
+        The counts read the same per-row status the table already tracks."""
+        self._run_banner_body.setText(_interrupted_prose(entries))
+        items = []
+        autosave_age = saved_session_age_seconds()
+        if autosave_age is not None:
+            items.append(("Last autosave", f"{_format_duration(autosave_age)} ago"))
+        clean_exit_age = crashlog.last_clean_exit_age_seconds()
+        if clean_exit_age is not None:
+            items.append(("Last clean exit", f"{_format_duration(clean_exit_age)} ago"))
+        faults = crashlog.faults_in_previous_run()
+        items.append(("Crash log", f"{_plural(faults, 'new entry', 'new entries')}"
+                                   if faults else "no new entry"))
+        slot = self._run_banner_meta_slot
+        while slot.count():
+            old = slot.takeAt(0).widget()
+            if old is not None:
+                old.deleteLater()
+        meta, _labels = widgets.meta_line(items, centered=False)
+        slot.addWidget(meta)
+        # When it stopped is when it last wrote to the log; the autosave is
+        # the fallback, and either is a lower bound - a hard crash records
+        # nothing at the instant (see crashlog.previous_run_stopped_at).
+        stopped_at = crashlog.previous_run_stopped_at()
+        stopped_age = max(time.time() - stopped_at, 0.0) if stopped_at is not None else autosave_age
+        if stopped_age is not None:
+            self.run_note_label.setText(f"stopped {_format_duration(stopped_age)} ago")
         self.run_banner.setVisible(True)
 
     def action_reconcile_with_hydrus(self):
@@ -1790,6 +1869,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         self._thumb_icon_cache.clear()
         self._local_pixmap_cache.clear()
         clear_session()
+        self.run_note_label.setText("")
         self._refresh_table()
         self._update_preview(None)
         self._refresh_tag_list(None)
@@ -3126,6 +3206,9 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         # batch pauses after one image - which also doubles as a cheap
         # check of whether the quota is actually back.
         reset_daily_limit_flag()
+        # A run is starting, so "stopped 2h 14m ago" / "last run failed" (R-06)
+        # now describes the run before this one rather than the strip's own.
+        self.run_note_label.setText("")
         # Same reasoning for a persisted quota-pause banner (DAN-486):
         # pressing Start Search is already the user acting on it, so a
         # stale "paused" banner from the last run would be misleading

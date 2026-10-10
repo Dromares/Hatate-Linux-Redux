@@ -4786,7 +4786,7 @@ class TestPersistedQuotaPauseShownOnStartup(GuiTestCase):
             self.assertIn("12 searched", text)
             self.assertTrue(win.run_banner.isVisibleTo(win.run_banner.parentWidget()))
             head = win.run_banner.findChild(widgets.QLabel, "RunBannerHead")
-            self.assertEqual(head.text(), "Run interrupted")
+            self.assertEqual(head.text(), "Run interrupted \u2014 partial results survived")
         finally:
             win.close()
             win.deleteLater()
