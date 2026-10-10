@@ -1,423 +1,766 @@
-"""Cross-routine no-checkout detection arm (DAN-666, follow-up to DAN-645).
+#!/usr/bin/env python3
+"""Cross-routine no-checkout detection arm -- DAN-666 (follow-up to DAN-645).
 
-DAN-645 found the Default-approver gate sweep routine producing ticks at a
-steady cadence for ~19 hours, none of which were ever checked out -- so
-their own step-0 orphan-guards never ran, so the backlog they are supposed
-to drain never drained, and nothing anywhere in the company alerted on it.
-A routine's ticks being minted fine but never picked up by an agent run is
-invisible everywhere else, including the seat-health watchdog's own first
-two arms, which only ever looked at seat crash-loops and stranded approval
-stages.
+DAN-645 found that the Default-approver gate sweep and False-done sweep
+routines produced ticks for ~19h that were created fine but never checked
+out (`checkoutRunId` and `executionRunId` both null forever, so step-0's own
+orphan-guard -- the thing that would normally drain a backlog like this --
+never ran either, since it lives inside a checkout that never happened).
+Nothing in the company alerted on this: the Seat-health watchdog (narrow
+arm) routine already fires every 15 minutes with read access to every
+routine, but had no arm that looked at OTHER routines' checkout health, only
+at seat crash-loops (seat_watchdog.py) and stranded approval stages
+(stranded_review.py). This script is that missing arm.
 
-This arm pulls every OTHER active schedule-triggered routine (it always
-excludes `SELF_ROUTINE_ID` -- this watchdog's own routine -- because a
-routine cannot reliably detect its own checkout failure) and, per routine,
-walks its most recent `--limit` runs newest-first for an unbroken streak of
-`status: in_progress` ticks whose linked issue has BOTH `checkoutRunId` and
-`executionRunId` null -- re-fetched fresh per issue, never trusting a
-cached `linkedIssue.status`, the same discipline the seat-health arm's own
-step 0 uses. A streak only qualifies once its elapsed span (oldest streak
-run's `triggeredAt` to now) is at least 2x that routine's OWN configured
-cadence (`nextRunAt - lastFiredAt` off its schedule trigger -- no cron
-parsing needed), so one transient single-tick miss never false-positives.
+A finding requires, for one OTHER active schedule-triggered routine:
+  1. Its most recent N runs (`--limit`, default 5, matching the DAN-666
+     proposal) include an unbroken run of "misses" starting from the
+     newest: `status: in_progress` with BOTH `checkoutRunId` and
+     `executionRunId` null -- never checked out, not merely slow. Each
+     run's linked issue is re-fetched fresh via `GET /api/issues/{id}`
+     rather than trusting the run's embedded `linkedIssue.status`, which can
+     lag (same rule the routine's own step-0 orphan-guard applies, per
+     DAN-479/DAN-532).
+  2. The elapsed time from `now` back to the OLDEST run in that unbroken
+     streak (its `triggeredAt`) is at least `STALE_MULTIPLIER` (2x) the
+     routine's own configured cadence -- so one transient single-tick miss
+     can never false-positive. Cadence is read directly off the routine's
+     enabled schedule trigger as `nextRunAt - lastFiredAt`: exact for
+     whatever cron expression is configured (fixed-interval, hourly-offset,
+     daily, ...) with no cron-string parsing needed.
 
-Dedupes on the routine (`[<routineId>]` marker in a tracking issue's
-title, the same shape as `seat_watchdog.py`'s `[<agentId>]` marker):
+DAN-703 (follow-up to DAN-693/DAN-666) widened the miss shape: DAN-680
+wedged behind a run that was CREATED but sat `queued` (`claimedAt`/
+`startedAt` both null) for ~3h before ever dispatching. A queued run holds
+`executionRunId` non-null on its target issue for the entire time it sits
+queued -- the same mechanism behind the standing `409 Issue run ownership
+conflict` rule -- so the original "`executionRunId` null" clause above
+never caught it even though the issue was genuinely never checked out.
+`wedged_checkout_streak`/`wedged_checkout_miss` are the sibling arm for
+this shape: same two-part bar (unbroken streak, 2x-cadence elapsed), but
+keyed on resolving `executionRunId` via `GET /api/heartbeat-runs/{id}` and
+finding it non-terminal with `startedAt`/`claimedAt` both still null,
+rather than on `executionRunId` being absent. A finding of this shape also
+reports the owning seat's running/queued occupancy (a queued run behind an
+occupied single-concurrency seat is not by itself evidence it is dead --
+DAN-693/DAN-694) and, when the stuck run is itself a retry successor whose
+`scheduledRetryAt` lands on an instant shared by another seat's run, flags
+that as a company-wide quota/clock boundary rather than a routine-specific
+failure.
 
-* No existing tracker -> file one (visibility only, assigned to this
-  watchdog's own owner) and mention the affected routine's owning agent so
-  they are woken to self-trigger it (`POST /api/routines/{id}/run`).
-* An existing tracker still open proves the condition has now persisted
-  across at least two consecutive watchdog ticks -- this arm's own
-  escalation trigger -- so that update additionally mentions Cloud,
-  throttled to once per hour so an unresolved finding does not re-ping (and
-  re-wake Cloud) every tick.
-* An existing tracker that is closed is resumed once; a further
-  re-occurrence after that only gets a plain comment (`noted_closed`),
-  mirroring `seat_watchdog.py`'s dedupe state machine.
+Known limitation, by construction: a routine cannot reliably detect its own
+checkout failure -- if a tick never fires (or never checks out), this arm
+never runs either. This script therefore always excludes its own routine
+(`SELF_ROUTINE_ID`, the Seat-health watchdog itself) from the scan. Other
+routines are what it exists to watch; the watchdog's own health has to come
+from somewhere else (a human noticing cadence drift, or a future sibling
+routine on a different seat).
 
-`ACTIONABLE: yes` on stdout iff at least one finding this tick was "filed"
--- a brand-new tracker a human has not seen before, the same narrowing
-DAN-491 applied to the other two arms.
+Action on a finding stays close to this routine's existing report-on-
+exception doctrine (DAN-289/DAN-385/DAN-491), with one deliberate addition
+the DAN-666 proposal asks for -- a wake, not just a record:
+  - Dedupe on the routine (a stable `[routineId]` marker in a tracking
+    issue's title, same pattern as seat_watchdog.py's per-seat tracker):
+    a brand-new finding files a tracking issue assigned to THIS watchdog's
+    own owner (visibility only -- same posture as every other arm) and
+    `[@mention](agent://...)`s the affected routine's owning agent so they
+    are woken to self-trigger it (`POST /api/routines/{id}/run`, the
+    pattern used on DAN-664/DAN-665), per the DAN-666 proposal.
+  - A still-open tracker found again proves the condition has now persisted
+    across at least two consecutive watchdog ticks -- the DAN-666 proposal's
+    own escalation trigger -- so that comment additionally mentions Cloud.
+  - Repeat notifications on an already-open tracker are throttled to once
+    per `RENOTIFY_INTERVAL_SECONDS` (1h) via a marker-timestamp check (the
+    same `should_poke` shape as stranded_review.py), so an unresolved
+    finding does not get a fresh ping (and a fresh Cloud wake) every single
+    15-minute tick forever.
+  - Only `"filed"` counts toward this tick's own ACTIONABLE signal (DAN-491
+    narrowing) -- an `"updated"`/`"resumed"`/`"throttled"` action is a
+    repeat of an already-known, already-reported finding.
+  - No cap on resumes (unlike seat_watchdog.py's MAX_AUTO_RESUMES) -- this
+    is a first cut of a new arm; add that hardening later if a live
+    thrashing tracker is ever observed, the same incremental pattern this
+    whole routine has followed arm-by-arm.
+
+Usage:
+  PAPERCLIP_API_KEY=... PAPERCLIP_API_URL=... PAPERCLIP_COMPANY_ID=... \
+      python3 ops/routine_checkout_watchdog.py [--limit 5] \
+      [--post-comment-on ISSUE_ID] [--dry-run] [--post] \
+      [--file-findings --project-id PID --assignee-agent-id AID]
+
+Exit code is always 0 -- this script only reports, it never signals failure
+of the routines it is watching.
 """
-
-from __future__ import annotations
-
 import argparse
 import json
 import os
+import sys
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Optional
+from datetime import datetime, timezone
 
-# This watchdog's own routine (the "Seat-health watchdog (narrow arm)"
-# routine, DAN-218/DAN-666) -- always excluded, since a routine cannot
-# reliably detect its own checkout failure.
+# This watchdog's own routine id -- excluded from the scan. See module
+# docstring for why self-detection here is undecidable by construction.
 SELF_ROUTINE_ID = "6c72d65a-5220-49a7-a81d-6dc7db32aebc"
 
-# Cloud (CEO seat) -- see DAN-666's escalation step.
-CLOUD_AGENT_ID = "c28db8ef-7f04-4c21-b575-ddee819e050a"
+STALE_MULTIPLIER = 2.0
+RENOTIFY_INTERVAL_SECONDS = 60 * 60  # 1h cap on repeat pings for an unresolved finding
+OPEN_STATUSES = frozenset({"todo", "in_progress", "in_review", "blocked"})
+ACTIONABLE_ACTIONS = frozenset({"filed"})
+MARKER = "<!-- routine-checkout-watchdog:v1 -->"
 
-CLOUD_ESCALATION_WINDOW_HOURS = 1
-RESUME_MARKER = "_(auto-resumed by ops/routine_checkout_watchdog.py)_"
-CLOUD_MENTION_MARKER = "_(cloud-escalation by ops/routine_checkout_watchdog.py)_"
+# Heartbeat-run statuses that mean a run is finished one way or another --
+# used to recognize the DAN-680 "queued and never started" wedge shape,
+# which is anything NOT in this set with both `startedAt`/`claimedAt` null.
+TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed", "cancelled", "interrupted", "timed_out"})
 
-ACTIONABLE_ACTIONS = {"filed"}
-
-
-def _parse_timestamp(value: Optional[str]) -> Optional[datetime]:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
+# Cloud, CEO -- DAN-666's own escalation target once a finding has persisted
+# past a second consecutive watchdog tick. Same id used by
+# stranded_review.py's ESCALATION_AGENT_ID.
+ESCALATION_AGENT_ID = "c28db8ef-7f04-4c21-b575-ddee819e050a"
 
 
-def routine_cadence_minutes(routine: dict[str, Any]) -> Optional[float]:
-    """The routine's own configured cadence, read off its schedule trigger
-    as `nextRunAt - lastFiredAt` -- no cron parsing needed. None when
-    either timestamp is missing (a routine that has never fired, or whose
-    trigger carries no schedule), in which case this routine cannot be
-    evaluated and must be skipped rather than guessed at.
-    """
+def api_get(path):
+    base = os.environ["PAPERCLIP_API_URL"].rstrip("/")
+    if base.endswith("/api"):
+        base = base[: -len("/api")]
+    req = urllib.request.Request(
+        base + path,
+        headers={"Authorization": "Bearer " + os.environ["PAPERCLIP_API_KEY"]},
+    )
+    with urllib.request.urlopen(req) as resp:
+        return json.load(resp)
+
+
+def _api_write(path, body, method):
+    base = os.environ["PAPERCLIP_API_URL"].rstrip("/")
+    if base.endswith("/api"):
+        base = base[: -len("/api")]
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        base + path,
+        data=data,
+        method=method,
+        headers={
+            "Authorization": "Bearer " + os.environ["PAPERCLIP_API_KEY"],
+            "Content-Type": "application/json",
+            "X-Paperclip-Run-Id": os.environ.get("PAPERCLIP_RUN_ID", ""),
+        },
+    )
+    with urllib.request.urlopen(req) as resp:
+        return json.load(resp)
+
+
+def api_post(path, body):
+    return _api_write(path, body, "POST")
+
+
+def api_patch(path, body):
+    return _api_write(path, body, "PATCH")
+
+
+def parse_ts(ts):
+    return datetime.fromisoformat(ts.replace("Z", "+00:00")) if ts else None
+
+
+def schedule_trigger(routine):
+    """First enabled, non-archived `schedule` trigger on `routine`, or None
+    if it has none (webhook/api-only routines are out of scope -- there is
+    no cadence to compare an elapsed streak against)."""
     for trigger in routine.get("triggers") or []:
-        if trigger.get("kind") != "schedule":
-            continue
-        next_run = _parse_timestamp(trigger.get("nextRunAt"))
-        last_fired = _parse_timestamp(trigger.get("lastFiredAt"))
-        if next_run is None or last_fired is None:
-            return None
-        return (next_run - last_fired).total_seconds() / 60.0
+        if trigger.get("kind") == "schedule" and trigger.get("enabled") and not trigger.get("archived"):
+            return trigger
     return None
 
 
-def is_never_checked_out(issue: dict[str, Any]) -> bool:
+def cadence_seconds(trigger):
+    """The routine's exact configured cadence, read directly off its
+    trigger as `nextRunAt - lastFiredAt` -- the platform has already
+    resolved whatever cron expression is configured (fixed-interval,
+    hourly-offset, daily, ...), so there is no need to parse the cron
+    string here. None if either timestamp is missing or the computed
+    cadence is non-positive (e.g. a trigger that has never fired)."""
+    last = parse_ts(trigger.get("lastFiredAt"))
+    nxt = parse_ts(trigger.get("nextRunAt"))
+    if last is None or nxt is None:
+        return None
+    delta = (nxt - last).total_seconds()
+    return delta if delta > 0 else None
+
+
+def no_checkout_miss(issue):
+    """True if `issue` (a fresh GET /api/issues/{id} response) is
+    `in_progress` but was never checked out at all -- both lock fields
+    null. This is the "never checked out", not "slow" shape DAN-645 and
+    DAN-666 are both about."""
     return (
-        issue.get("status") == "in_progress"
+        issue is not None
+        and issue.get("status") == "in_progress"
         and issue.get("checkoutRunId") is None
         and issue.get("executionRunId") is None
     )
 
 
-def find_checkout_streak(
-    runs_newest_first: list[dict[str, Any]], issue_lookup: Callable[[str], Optional[dict[str, Any]]]
-) -> list[dict[str, Any]]:
-    """Unbroken streak of never-checked-out runs, newest-first, stopping at
-    the first run whose linked issue does not qualify (including a run
-    with no linked issue at all -- a platform-level pre-tick-creation
-    failure is a different fault shape, not this arm's concern)."""
-    streak: list[dict[str, Any]] = []
-    for run in runs_newest_first:
+def no_checkout_streak(runs, fetch_issue):
+    """Walks `runs` (newest-first, as returned by
+    GET /api/routines/{id}/runs) and returns the leading unbroken run of
+    no-checkout misses -- (streak_runs, oldest_triggered_at), newest-first,
+    or ([], None) if the newest run is not itself a miss.
+
+    Stops at the first run that is not a miss (terminal, or genuinely
+    checked out) or that has no `linkedIssueId` at all (a coalesced run
+    with nothing of its own to evaluate). Each linked issue is fetched
+    fresh via `fetch_issue` rather than trusting the run's embedded
+    `linkedIssue.status`, which can lag live state.
+
+    A run whose tick was coalesced into another run can share the same
+    `linkedIssueId` as its neighbour in the streak -- that linked issue
+    then appears twice in the returned list. This only affects the
+    displayed run count, not the elapsed-time threshold below (which is
+    computed from timestamps, not from how many runs are in the list), so
+    it is left as a known cosmetic simplification rather than solved here.
+    """
+    streak = []
+    for run in runs:
         linked_issue_id = run.get("linkedIssueId")
         if not linked_issue_id:
             break
-        issue = issue_lookup(linked_issue_id)
-        if issue is None or not is_never_checked_out(issue):
+        issue = fetch_issue(linked_issue_id)
+        if not no_checkout_miss(issue):
             break
         streak.append(run)
-    return streak
+    if not streak:
+        return [], None
+    oldest = parse_ts(streak[-1].get("triggeredAt"))
+    return streak, oldest
 
 
-@dataclass
-class RoutineFinding:
-    routine_id: str
-    routine_title: str
-    owner_agent_id: Optional[str]
-    streak_runs: list[dict[str, Any]]
-    cadence_minutes: float
-    span_minutes: float
+def queued_never_started(run):
+    """True if `run` (a fresh `GET /api/heartbeat-runs/{id}` response) is
+    non-terminal and has never started -- both `startedAt` and `claimedAt`
+    null. This is the DAN-680 shape: a queued run that sat behind seat
+    occupancy for ~3h before ever dispatching. Terminality is read off
+    `status` (see `TERMINAL_RUN_STATUSES`), never inferred from the two
+    null timestamps alone -- a long-queued run on an occupied single-
+    concurrency seat is indistinguishable from dead by those two fields by
+    themselves (DAN-693/DAN-694)."""
+    return (
+        run is not None
+        and run.get("status") not in TERMINAL_RUN_STATUSES
+        and run.get("startedAt") is None
+        and run.get("claimedAt") is None
+    )
 
-    @property
-    def streak_length(self) -> int:
-        return len(self.streak_runs)
 
-    @property
-    def threshold_minutes(self) -> float:
-        return 2 * self.cadence_minutes
+def wedged_checkout_miss(issue, run):
+    """True if `issue` is the DAN-680 wedge shape that `no_checkout_miss`
+    cannot see: `in_progress`, never checked out itself
+    (`checkoutRunId is None`), but held by a queued-and-never-started run
+    through `executionRunId` rather than being genuinely absent. A queued
+    run holds `executionRunId` non-null on its target issue for the entire
+    time it sits queued -- the same mechanism behind the standing `409
+    Issue run ownership conflict` rule -- so `executionRunId` being set does
+    not by itself mean the issue was ever checked out; `run` (the fresh
+    `GET /api/heartbeat-runs/{id}` resolution of that id) is what decides
+    it. Deliberately excludes `checked_out_issue()`'s shape: a genuinely
+    checked-out issue also has `checkoutRunId` set, which this requires to
+    be null."""
+    return (
+        issue is not None
+        and issue.get("status") == "in_progress"
+        and issue.get("checkoutRunId") is None
+        and issue.get("executionRunId") is not None
+        and queued_never_started(run)
+    )
 
 
-def _streak_span_minutes(streak_runs: list[dict[str, Any]], now: datetime) -> float:
-    timestamps = [
-        ts for ts in (_parse_timestamp(r.get("triggeredAt")) for r in streak_runs) if ts is not None
-    ]
-    if not timestamps:
-        return 0.0
-    return (now - min(timestamps)).total_seconds() / 60.0
+def wedged_checkout_streak(runs, fetch_issue, fetch_run):
+    """Sibling of `no_checkout_streak` for the DAN-680 wedge shape: walks
+    `runs` newest-first and returns the leading unbroken run of
+    wedged-checkout misses, (streak_runs, oldest_triggered_at) newest-first,
+    or ([], None) if the newest run is not itself a wedge. Each linked
+    issue's `executionRunId` is resolved fresh via `fetch_run` rather than
+    trusting its mere presence -- that is exactly what distinguishes this
+    shape from a genuine checkout."""
+    streak = []
+    for run_entry in runs:
+        linked_issue_id = run_entry.get("linkedIssueId")
+        if not linked_issue_id:
+            break
+        issue = fetch_issue(linked_issue_id)
+        if issue is None or issue.get("status") != "in_progress" or issue.get("checkoutRunId") is not None:
+            break
+        execution_run_id = issue.get("executionRunId")
+        if not execution_run_id:
+            break
+        run = fetch_run(execution_run_id)
+        if not wedged_checkout_miss(issue, run):
+            break
+        streak.append(run_entry)
+    if not streak:
+        return [], None
+    oldest = parse_ts(streak[-1].get("triggeredAt"))
+    return streak, oldest
+
+
+def seat_occupancy_counts(seat_runs):
+    """Running vs queued counts across `seat_runs` (a seat's own run list,
+    as returned by `GET /api/companies/{id}/heartbeat-runs?agentId=...`).
+    A queued run on an occupied single-concurrency seat is a seat-occupancy
+    fact, not evidence the queued run itself is dead (DAN-693/DAN-694) --
+    this is what lets a wedge finding say "seat busy" instead of implying
+    the stuck run is stuck forever."""
+    return {
+        "running": sum(1 for r in seat_runs if r.get("status") == "running"),
+        "queued": sum(1 for r in seat_runs if r.get("status") == "queued"),
+    }
+
+
+def shared_quota_boundary(run, other_seat_runs):
+    """If `run` (the stuck queued-never-started run) is itself a retry
+    successor (`retryOfRunId` set) carrying a `scheduledRetryAt`, and that
+    exact instant is also carried by a DIFFERENT agent's run in
+    `other_seat_runs`, this is a company-wide quota/clock reset boundary
+    (DAN-694), not evidence this routine's seat alone is broken. Returns
+    the shared ISO timestamp string, or None when there is no such run, no
+    `scheduledRetryAt`, or no match on another seat."""
+    if run is None or not run.get("retryOfRunId"):
+        return None
+    scheduled = run.get("scheduledRetryAt")
+    if not scheduled:
+        return None
+    own_agent = run.get("agentId")
+    for other in other_seat_runs:
+        if other.get("scheduledRetryAt") == scheduled and other.get("agentId") != own_agent:
+            return scheduled
+    return None
 
 
 def evaluate_routine(
-    routine: dict[str, Any],
-    runs_newest_first: list[dict[str, Any]],
-    issue_lookup: Callable[[str], Optional[dict[str, Any]]],
-    now: Optional[datetime] = None,
-) -> Optional[RoutineFinding]:
-    now = now or datetime.now(timezone.utc)
-    if routine.get("id") == SELF_ROUTINE_ID:
-        return None
-    cadence = routine_cadence_minutes(routine)
-    if cadence is None or cadence <= 0:
+    routine, trigger, runs, fetch_issue, now,
+    fetch_run=None, fetch_seat_runs=None, fetch_company_runs=None,
+):
+    """Returns a finding dict or None. `trigger` must already be known to
+    be an enabled schedule trigger (see `schedule_trigger`).
+
+    `fetch_run` is optional and opts into the DAN-680 wedge arm
+    (`wedged_checkout_streak`) alongside the original no-checkout arm
+    (`no_checkout_streak`); omitting it (the default) preserves the
+    original DAN-666 behaviour exactly. At most one of the two streaks can
+    be non-empty for a given run list, because they require mutually
+    exclusive shapes of the newest run's linked issue (`executionRunId`
+    null vs. set-and-resolving-to-queued-never-started), so there is no
+    ambiguity in preferring whichever is non-empty.
+
+    `fetch_seat_runs` and `fetch_company_runs` are optional and, only when
+    the wedge arm actually fires, attach seat-occupancy and shared-quota
+    context (see `seat_occupancy_counts`/`shared_quota_boundary`) onto the
+    returned finding's `wedge_context` so `describe_finding` can report
+    seat-busy/quota-boundary framing instead of implying the queued run is
+    dead (DAN-693/DAN-694)."""
+    cadence = cadence_seconds(trigger)
+    if cadence is None:
         return None
 
-    streak = find_checkout_streak(runs_newest_first, issue_lookup)
-    if not streak:
+    streak, oldest = no_checkout_streak(runs, fetch_issue)
+    kind = "no_checkout"
+    if not streak and fetch_run is not None:
+        streak, oldest = wedged_checkout_streak(runs, fetch_issue, fetch_run)
+        kind = "wedged"
+
+    if not streak or oldest is None:
+        return None
+    elapsed = (now - oldest).total_seconds()
+    if elapsed < STALE_MULTIPLIER * cadence:
         return None
 
-    span_minutes = _streak_span_minutes(streak, now)
-    finding = RoutineFinding(
-        routine_id=routine["id"],
-        routine_title=routine.get("title") or routine["id"],
-        owner_agent_id=routine.get("assigneeAgentId"),
-        streak_runs=streak,
-        cadence_minutes=cadence,
-        span_minutes=span_minutes,
-    )
-    if finding.span_minutes < finding.threshold_minutes:
-        return None
+    finding = {
+        "routine": routine,
+        "cadence_seconds": cadence,
+        "streak": streak,
+        "oldest_triggered_at": oldest,
+        "elapsed_seconds": elapsed,
+        "kind": kind,
+    }
+
+    if kind == "wedged":
+        newest_issue = fetch_issue(streak[0].get("linkedIssueId"))
+        wedge_run = fetch_run(newest_issue.get("executionRunId")) if newest_issue else None
+        seat_agent_id = wedge_run.get("agentId") if wedge_run else None
+        wedge_context = {"seat_agent_id": seat_agent_id}
+        if seat_agent_id and fetch_seat_runs is not None:
+            try:
+                wedge_context.update(seat_occupancy_counts(fetch_seat_runs(seat_agent_id) or []))
+            except Exception:
+                pass
+        if wedge_run is not None and fetch_company_runs is not None:
+            try:
+                wedge_context["quota_boundary_ts"] = shared_quota_boundary(wedge_run, fetch_company_runs() or [])
+            except Exception:
+                pass
+        finding["wedge_context"] = wedge_context
+
     return finding
 
 
-def find_findings(
-    routines: list[dict[str, Any]],
-    runs_by_routine: dict[str, list[dict[str, Any]]],
-    issue_lookup: Callable[[str], Optional[dict[str, Any]]],
-    now: Optional[datetime] = None,
-) -> list[RoutineFinding]:
-    now = now or datetime.now(timezone.utc)
+def compute_findings(
+    routines, fetch_runs, fetch_issue, now, self_routine_id=SELF_ROUTINE_ID,
+    fetch_run=None, fetch_seat_runs=None, fetch_company_runs=None,
+):
     findings = []
     for routine in routines:
-        runs = runs_by_routine.get(routine["id"], [])
-        finding = evaluate_routine(routine, runs, issue_lookup, now=now)
+        if routine.get("id") == self_routine_id:
+            continue
+        if routine.get("status") != "active":
+            continue
+        trigger = schedule_trigger(routine)
+        if trigger is None:
+            continue
+        runs = fetch_runs(routine["id"])
+        finding = evaluate_routine(
+            routine, trigger, runs, fetch_issue, now,
+            fetch_run=fetch_run, fetch_seat_runs=fetch_seat_runs, fetch_company_runs=fetch_company_runs,
+        )
         if finding is not None:
             findings.append(finding)
     return findings
 
 
-def _mention(agent_id: str) -> str:
-    return f"[@agent](agent://{agent_id})"
+def agent_names(company_id):
+    try:
+        agents = api_get(f"/api/companies/{company_id}/agents")
+        return {a["id"]: a.get("name") or a.get("displayName") or a["id"] for a in agents}
+    except Exception:
+        return {}
 
 
-def _tracker_title(routine_id: str) -> str:
-    return f"Routine checkout watchdog: never-checked-out ticks on routine [{routine_id}]"
+def finding_marker(routine_id):
+    """Stable per-routine dedupe tag embedded in the tracking issue's title."""
+    return f"[{routine_id}]"
 
 
-def _finding_summary(finding: RoutineFinding) -> str:
-    summary = (
-        f"Routine '{finding.routine_title}' ({finding.routine_id}) has {finding.streak_length} "
-        f"consecutive in_progress tick(s) never checked out, spanning {finding.span_minutes:.1f} minutes "
-        f"(threshold {finding.threshold_minutes:.1f} minutes = 2x its own {finding.cadence_minutes:.1f}-minute cadence)."
+def finding_title(finding):
+    routine = finding["routine"]
+    n = len(finding["streak"])
+    return (
+        f"Routine checkout watchdog: {routine.get('title', routine['id'])} -- "
+        f"{n} unchecked-out tick(s) {finding_marker(routine['id'])}"
     )
-    if finding.owner_agent_id:
-        summary += f" Owning agent: {_mention(finding.owner_agent_id)} -- please self-trigger via POST /api/routines/{finding.routine_id}/run."
-    return summary
 
 
-class PaperclipClient:
-    """Thin HTTP wrapper around the Paperclip routines/issues API."""
+def is_tracking_issue(issue, routine_id):
+    """True if `issue` is this routine's own tracking issue -- matched on
+    the stable `[routineId]` marker in the title, not the human-readable
+    count or label, both of which change between updates."""
+    return finding_marker(routine_id) in (issue.get("title") or "")
 
-    def __init__(self, api_base: str, api_key: str, run_id: Optional[str] = None) -> None:
-        self.api_base = api_base.rstrip("/")
-        self.api_key = api_key
-        self.run_id = run_id
 
-    def _request(self, method: str, path: str, body: Optional[dict[str, Any]] = None) -> Any:
-        url = f"{self.api_base}{path}"
-        data = json.dumps(body).encode() if body is not None else None
-        req = urllib.request.Request(url, data=data, method=method)
-        req.add_header("Authorization", f"Bearer {self.api_key}")
-        req.add_header("Content-Type", "application/json")
-        if self.run_id:
-            req.add_header("X-Paperclip-Run-Id", self.run_id)
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode())
+def find_existing_tracking_issue(company_id, routine_id, api_get_fn=api_get):
+    """Searches this watchdog's own issues for `routine_id`'s tracking
+    issue, across ALL statuses (a closed tracker still must be found so a
+    recurrence is treated as a resume rather than a brand-new finding).
+    Among multiple matches, an open one wins over a closed one; among ties,
+    the earliest-created wins -- same tie-break rule as
+    seat_watchdog.py's `_pick_canonical_match`, applied here without the
+    full duplicate-reconciliation machinery that earned its complexity from
+    a specific live race (DAN-531); add that hardening here too if a live
+    duplicate is ever observed."""
+    listing = api_get_fn(
+        f"/api/companies/{company_id}/issues"
+        f"?q={urllib.parse.quote(finding_marker(routine_id))}&limit=50"
+    )
+    items = listing if isinstance(listing, list) else listing.get("issues", listing.get("data", []))
+    matches = [item for item in items if is_tracking_issue(item, routine_id)]
+    if not matches:
+        return None
+    open_matches = [m for m in matches if m.get("status") in OPEN_STATUSES]
+    pool = open_matches if open_matches else matches
+    return min(pool, key=lambda m: m.get("createdAt") or m.get("updatedAt") or "")
 
-    def list_active_schedule_routines(self, company_id: str) -> list[dict[str, Any]]:
-        result = self._request("GET", f"/api/companies/{company_id}/routines")
-        routines = result.get("routines", []) if isinstance(result, dict) else result
-        return [
-            r
-            for r in routines
-            if r.get("status") != "archived"
-            and any(t.get("kind") == "schedule" and t.get("enabled") for t in r.get("triggers") or [])
+
+def _fmt_elapsed(seconds):
+    minutes = seconds / 60
+    if minutes < 60:
+        return f"{minutes:.0f}m"
+    return f"{minutes / 60:.1f}h"
+
+
+def _owner_mention(routine, names):
+    owner_id = routine.get("assigneeAgentId")
+    if not owner_id:
+        return "**no owner**"
+    label = names.get(owner_id, owner_id)
+    return f"[@{label}](agent://{owner_id})"
+
+
+def describe_finding(finding, names, escalate=False):
+    """The comment/description body for a finding. `escalate=True` adds a
+    Cloud mention -- used once a tracker is found already open, proving
+    this has persisted past a second consecutive watchdog tick (DAN-666's
+    own escalation trigger)."""
+    routine = finding["routine"]
+    routine_id = routine["id"]
+    routine_label = routine.get("title", routine_id)
+    streak = finding["streak"]
+    cadence = finding["cadence_seconds"]
+    elapsed = finding["elapsed_seconds"]
+    owner_mention = _owner_mention(routine, names)
+
+    is_wedged = finding.get("kind") == "wedged"
+    if is_wedged:
+        summary = (
+            f"{owner_mention} -- **{routine_label}** (`{routine_id}`) has {len(streak)} consecutive "
+            f"tick(s) wedged behind a queued-and-never-started run (`status: in_progress`, "
+            f"`checkoutRunId` null, but `executionRunId` points at a run that is non-terminal with "
+            f"both `startedAt` and `claimedAt` null -- the [DAN-680](/DAN/issues/DAN-680) shape), "
+            f"spanning {_fmt_elapsed(elapsed)} against a routine cadence of ~{_fmt_elapsed(cadence)} "
+            f"(threshold {STALE_MULTIPLIER:.0f}x = {_fmt_elapsed(STALE_MULTIPLIER * cadence)})."
+        )
+    else:
+        summary = (
+            f"{owner_mention} -- **{routine_label}** (`{routine_id}`) has {len(streak)} consecutive "
+            f"tick(s) that were never checked out (`status: in_progress` with both `checkoutRunId` "
+            f"and `executionRunId` null), spanning {_fmt_elapsed(elapsed)} against a routine cadence "
+            f"of ~{_fmt_elapsed(cadence)} (threshold {STALE_MULTIPLIER:.0f}x = "
+            f"{_fmt_elapsed(STALE_MULTIPLIER * cadence)})."
+        )
+
+    lines = [
+        f"## Routine checkout watchdog -- {routine_label} {MARKER}",
+        "",
+        summary,
+        "",
+        "Affected ticks, newest-first:",
+    ]
+    for run in streak:
+        linked = run.get("linkedIssue") or {}
+        label = linked.get("identifier") or run.get("linkedIssueId")
+        lines.append(f"- [{label}](/DAN/issues/{label}) triggered {run.get('triggeredAt')}")
+
+    if is_wedged:
+        ctx = finding.get("wedge_context") or {}
+        seat_agent_id = ctx.get("seat_agent_id")
+        running = ctx.get("running")
+        queued = ctx.get("queued")
+        if seat_agent_id and running is not None and queued is not None:
+            seat_label = names.get(seat_agent_id, seat_agent_id)
+            lines += [
+                "",
+                f"Owning seat [@{seat_label}](agent://{seat_agent_id}) currently has {running} "
+                f"running / {queued} queued run(s). A queued run behind seat occupancy is not by "
+                "itself evidence that it is dead "
+                "([DAN-693](/DAN/issues/DAN-693)/[DAN-694](/DAN/issues/DAN-694)) -- do not restart "
+                "the seat on this finding alone.",
+            ]
+        quota_ts = ctx.get("quota_boundary_ts")
+        if quota_ts:
+            lines += [
+                "",
+                f"Its `scheduledRetryAt` (`{quota_ts}`) is also carried by another seat's run -- this "
+                "looks like a company-wide quota/clock reset boundary, not a failure specific to "
+                "this routine or seat.",
+            ]
+        lines += [
+            "",
+            f"Self-trigger to clear the backlog once the queued run finally dispatches (or resolves): "
+            f"`POST /api/routines/{routine_id}/run` (per the pattern used on "
+            "[DAN-664](/DAN/issues/DAN-664)/[DAN-665](/DAN/issues/DAN-665)).",
+        ]
+    else:
+        lines += [
+            "",
+            f"Self-trigger to clear the backlog and let its own orphan-guard run: "
+            f"`POST /api/routines/{routine_id}/run` (per the pattern used on "
+            "[DAN-664](/DAN/issues/DAN-664)/[DAN-665](/DAN/issues/DAN-665)), then investigate why the "
+            "schedule fire itself is not reaching checkout -- see [DAN-645](/DAN/issues/DAN-645) for "
+            "the ACP-adapter root cause found for the same shape on other seats.",
         ]
 
-    def list_recent_runs(self, routine_id: str, limit: int) -> list[dict[str, Any]]:
-        result = self._request("GET", f"/api/routines/{routine_id}/runs?limit={limit}")
-        return result.get("runs", []) if isinstance(result, dict) else result
+    if escalate:
+        ceo_mention = f"[@{names.get(ESCALATION_AGENT_ID, 'Cloud')}](agent://{ESCALATION_AGENT_ID})"
+        lines += [
+            "",
+            f"{ceo_mention} -- this has now been flagged on at least two consecutive watchdog "
+            "ticks without clearing; escalating per [DAN-666](/DAN/issues/DAN-666)'s own trigger.",
+        ]
+    return "\n".join(lines)
 
-    def get_issue(self, issue_id: str) -> Optional[dict[str, Any]]:
-        return self._request("GET", f"/api/issues/{issue_id}")
 
-    def find_tracker(self, company_id: str, routine_id: str) -> Optional[dict[str, Any]]:
-        marker = f"[{routine_id}]"
-        path = f"/api/companies/{company_id}/issues?q={urllib.parse.quote(marker)}&limit=50"
-        result = self._request("GET", path)
-        issues = result.get("issues", []) if isinstance(result, dict) else result
-        for issue in issues:
-            if marker in (issue.get("title") or ""):
-                return issue
-        return None
+def _last_marker_ts(comments):
+    last = None
+    for comment in comments:
+        if MARKER not in (comment.get("body") or ""):
+            continue
+        ts = parse_ts(comment.get("createdAt"))
+        if ts is not None and (last is None or ts > last):
+            last = ts
+    return last
 
-    def list_comments(self, issue_id: str) -> list[dict[str, Any]]:
-        result = self._request("GET", f"/api/issues/{issue_id}/comments")
-        return result.get("comments", []) if isinstance(result, dict) else result
 
-    def create_tracker(
-        self, company_id: str, project_id: str, assignee_agent_id: str, title: str, description: str
-    ) -> dict[str, Any]:
-        return self._request(
-            "POST",
+def should_notify(comments, now):
+    """False if a marker comment on the tracker was already posted within
+    RENOTIFY_INTERVAL_SECONDS of `now` -- caps repeat pings (and repeat
+    Cloud wakes) on a still-unresolved finding to once per window, same
+    shape as stranded_review.py's `should_poke`."""
+    last = _last_marker_ts(comments)
+    if last is None:
+        return True
+    return (now - last).total_seconds() >= RENOTIFY_INTERVAL_SECONDS
+
+
+def is_actionable(action):
+    return action in ACTIONABLE_ACTIONS
+
+
+def file_or_update_finding(company_id, finding, names, project_id, assignee_agent_id, now,
+                            api_get_fn=api_get, api_post_fn=api_post, api_patch_fn=api_patch):
+    """Dedupe on the routine:
+      - no existing tracker -> file a new one, owner mention only (first
+        occurrence -- nothing to escalate yet).
+      - existing tracker is OPEN -> this finding has now been seen on at
+        least two consecutive ticks; post an update comment that also
+        escalates to Cloud, throttled to once per RENOTIFY_INTERVAL_SECONDS.
+      - existing tracker is CLOSED -> recurrence; resume it (reopen to
+        `todo`) with an escalating comment -- a closed tracker already
+        proved this condition was seen before, so a fresh instance still
+        counts as persisting, not as brand new.
+    Returns (issue, action) with action in
+    {"filed", "updated", "resumed", "throttled"}.
+    """
+    routine_id = finding["routine"]["id"]
+    existing = find_existing_tracking_issue(company_id, routine_id, api_get_fn)
+
+    if existing is None:
+        body = describe_finding(finding, names, escalate=False)
+        issue = api_post_fn(
             f"/api/companies/{company_id}/issues",
             {
-                "title": title,
-                "description": description,
+                "title": finding_title(finding),
+                "description": body,
                 "projectId": project_id,
                 "assigneeAgentId": assignee_agent_id,
-                "priority": "medium",
+                "priority": "high",
+                "status": "todo",
             },
         )
+        return issue, "filed"
 
-    def comment(self, issue_id: str, body: str) -> Any:
-        return self._request("POST", f"/api/issues/{issue_id}/comments", {"body": body})
+    comments = api_get_fn(f"/api/issues/{existing['id']}/comments")
+    comments = comments if isinstance(comments, list) else comments.get("comments", comments.get("data", []))
 
-    def resume(self, issue_id: str, comment: str) -> Any:
-        return self._request("PATCH", f"/api/issues/{issue_id}", {"status": "todo", "comment": comment})
+    if not should_notify(comments, now):
+        return existing, "throttled"
 
+    body = describe_finding(finding, names, escalate=True)
+    if existing.get("status") in OPEN_STATUSES:
+        api_post_fn(f"/api/issues/{existing['id']}/comments", {"body": body})
+        return existing, "updated"
 
-def _last_marker_at(comments: list[dict[str, Any]], marker: str) -> Optional[datetime]:
-    latest: Optional[datetime] = None
-    for comment in comments:
-        if marker not in (comment.get("body") or ""):
-            continue
-        ts = _parse_timestamp(comment.get("createdAt"))
-        if ts is not None and (latest is None or ts > latest):
-            latest = ts
-    return latest
-
-
-def dedupe_and_file(
-    client: PaperclipClient,
-    company_id: str,
-    project_id: str,
-    assignee_agent_id: str,
-    finding: RoutineFinding,
-    now: Optional[datetime] = None,
-) -> str:
-    now = now or datetime.now(timezone.utc)
-    existing = client.find_tracker(company_id, finding.routine_id)
-    if existing is None:
-        client.create_tracker(
-            company_id, project_id, assignee_agent_id, _tracker_title(finding.routine_id), _finding_summary(finding)
-        )
-        return "filed"
-
-    if existing.get("status") not in ("done", "cancelled"):
-        # Persisted across >=2 consecutive watchdog ticks -- escalate to
-        # Cloud too, throttled to once per hour.
-        comments = client.list_comments(existing["id"])
-        last_cloud_mention = _last_marker_at(comments, CLOUD_MENTION_MARKER)
-        escalate = last_cloud_mention is None or (now - last_cloud_mention) >= timedelta(
-            hours=CLOUD_ESCALATION_WINDOW_HOURS
-        )
-        body = _finding_summary(finding)
-        if escalate:
-            body += f"\n\n{CLOUD_MENTION_MARKER} Still unresolved across consecutive ticks -- {_mention(CLOUD_AGENT_ID)}."
-        client.comment(existing["id"], body)
-        return "updated"
-
-    comments = client.list_comments(existing["id"])
-    already_resumed = any(RESUME_MARKER in (c.get("body") or "") for c in comments)
-    if not already_resumed:
-        client.resume(existing["id"], f"{RESUME_MARKER} {_finding_summary(finding)}")
-        return "resumed"
-
-    client.comment(existing["id"], f"Still happening (tracker already closed and previously resumed): {_finding_summary(finding)}")
-    return "noted_closed"
+    api_patch_fn(
+        f"/api/issues/{existing['id']}",
+        {"status": "todo", "comment": body, "resume": True},
+    )
+    return existing, "resumed"
 
 
-def run_watchdog(
-    client: PaperclipClient,
-    company_id: str,
-    limit: int,
-    file_findings: bool,
-    project_id: Optional[str] = None,
-    assignee_agent_id: Optional[str] = None,
-) -> dict[str, Any]:
-    routines = client.list_active_schedule_routines(company_id)
-    runs_by_routine = {r["id"]: client.list_recent_runs(r["id"], limit) for r in routines}
-
-    issue_cache: dict[str, Optional[dict[str, Any]]] = {}
-
-    def issue_lookup(issue_id: str) -> Optional[dict[str, Any]]:
-        if issue_id not in issue_cache:
-            issue_cache[issue_id] = client.get_issue(issue_id)
-        return issue_cache[issue_id]
-
-    findings = find_findings(routines, runs_by_routine, issue_lookup)
-
-    report: dict[str, Any] = {"findings": [], "actionable": False}
-    for finding in findings:
-        row: dict[str, Any] = {
-            "routineId": finding.routine_id,
-            "streakLength": finding.streak_length,
-            "spanMinutes": round(finding.span_minutes, 1),
-        }
-        if file_findings:
-            assert project_id and assignee_agent_id, "--file-findings requires --project-id and --assignee-agent-id"
-            action = dedupe_and_file(client, company_id, project_id, assignee_agent_id, finding)
-            row["action"] = action
-            if action in ACTIONABLE_ACTIONS:
-                report["actionable"] = True
-        report["findings"].append(row)
-    return report
-
-
-def _normalize_api_base(raw: str) -> str:
-    base = raw.rstrip("/")
-    if base.endswith("/api"):
-        base = base[: -len("/api")]
-    return base
-
-
-def main(argv: Optional[list[str]] = None) -> int:
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--limit", type=int, default=5)
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--file-findings", action="store_true")
-    parser.add_argument("--project-id")
-    parser.add_argument("--assignee-agent-id")
-    parser.add_argument("--company-id", default=os.environ.get("PAPERCLIP_COMPANY_ID"))
-    parser.add_argument("--api-base", default=os.environ.get("PAPERCLIP_API_URL"))
-    args = parser.parse_args(argv)
-
-    if not args.company_id:
-        parser.error("--company-id is required (or set PAPERCLIP_COMPANY_ID)")
-    if not args.api_base:
-        parser.error("--api-base is required (or set PAPERCLIP_API_URL)")
-    if args.file_findings and not (args.project_id and args.assignee_agent_id):
+    parser.add_argument("--limit", type=int, default=5, help="Runs to pull per routine, newest-first")
+    parser.add_argument("--post-comment-on", help="Issue id for the roll-up comment (this run's own issue)")
+    parser.add_argument("--dry-run", action="store_true", help="Print findings, never post")
+    parser.add_argument("--post", action="store_true", help="Explicit opt-in: actually post the roll-up comment")
+    parser.add_argument(
+        "--file-findings", action="store_true",
+        help="File-or-update a per-routine tracking issue for each finding (DAN-666)",
+    )
+    parser.add_argument("--project-id", help="Required with --file-findings")
+    parser.add_argument("--assignee-agent-id", help="Required with --file-findings; the watchdog's own owner")
+    parser.add_argument("--self-routine-id", default=SELF_ROUTINE_ID)
+    args = parser.parse_args()
+    if args.file_findings and not args.dry_run and not (args.project_id and args.assignee_agent_id):
         parser.error("--file-findings requires --project-id and --assignee-agent-id")
 
-    api_key = os.environ.get("PAPERCLIP_API_KEY")
-    if not api_key:
-        parser.error("PAPERCLIP_API_KEY must be set in the environment")
+    company_id = os.environ["PAPERCLIP_COMPANY_ID"]
+    now = datetime.now(timezone.utc)
 
-    client = PaperclipClient(
-        _normalize_api_base(args.api_base), api_key, os.environ.get("PAPERCLIP_RUN_ID")
+    routines = api_get(f"/api/companies/{company_id}/routines")
+
+    issue_cache = {}
+
+    def fetch_issue(issue_id):
+        if issue_id not in issue_cache:
+            try:
+                issue_cache[issue_id] = api_get(f"/api/issues/{issue_id}")
+            except Exception:
+                issue_cache[issue_id] = None
+        return issue_cache[issue_id]
+
+    def fetch_runs(routine_id):
+        return api_get(f"/api/routines/{routine_id}/runs?limit={args.limit}")
+
+    run_cache = {}
+
+    def fetch_run(run_id):
+        if run_id not in run_cache:
+            try:
+                run_cache[run_id] = api_get(f"/api/heartbeat-runs/{run_id}")
+            except Exception:
+                run_cache[run_id] = None
+        return run_cache[run_id]
+
+    def _runs_list(payload):
+        return payload if isinstance(payload, list) else payload.get("runs", payload.get("data", []))
+
+    def fetch_seat_runs(seat_agent_id):
+        return _runs_list(api_get(f"/api/companies/{company_id}/heartbeat-runs?limit=300&agentId={seat_agent_id}"))
+
+    company_runs_cache = {}
+
+    def fetch_company_runs():
+        if "runs" not in company_runs_cache:
+            company_runs_cache["runs"] = _runs_list(api_get(f"/api/companies/{company_id}/heartbeat-runs?limit=300"))
+        return company_runs_cache["runs"]
+
+    findings = compute_findings(
+        routines, fetch_runs, fetch_issue, now, args.self_routine_id,
+        fetch_run=fetch_run, fetch_seat_runs=fetch_seat_runs, fetch_company_runs=fetch_company_runs,
     )
-    report = run_watchdog(
-        client,
-        args.company_id,
-        args.limit,
-        args.file_findings,
-        project_id=args.project_id,
-        assignee_agent_id=args.assignee_agent_id,
+
+    if not findings:
+        print("No cross-routine no-checkout streaks found.")
+        return 0
+
+    names = agent_names(company_id)
+    preview = "## Routine checkout watchdog -- visibility only\n\n" + "\n\n".join(
+        describe_finding(f, names, escalate=False) for f in findings
     )
-    print(json.dumps(report, indent=2))
-    print(f"ACTIONABLE: {'yes' if report['actionable'] else 'no'}")
+    print(preview)
+
+    if args.file_findings and not args.dry_run:
+        actions = []
+        for finding in findings:
+            issue, action = file_or_update_finding(
+                company_id, finding, names, args.project_id, args.assignee_agent_id, now,
+            )
+            actions.append(action)
+            label = issue.get("identifier", issue.get("id"))
+            print(f"\n{action} {label} for routine {finding['routine'].get('title')}.")
+        print(f"\nACTIONABLE: {'yes' if any(is_actionable(a) for a in actions) else 'no'}")
+    elif args.file_findings:
+        for finding in findings:
+            existing = find_existing_tracking_issue(company_id, finding["routine"]["id"])
+            action = "filed" if existing is None else (
+                "updated" if existing.get("status") in OPEN_STATUSES else "resumed"
+            )
+            print(f"\n[dry-run] would {action} tracking issue for routine {finding['routine'].get('title')}.")
+        print(f"\nACTIONABLE: {'yes' if any(f for f in findings) else 'no'}")
+
+    if args.post_comment_on and args.post and not args.dry_run:
+        api_post(f"/api/issues/{args.post_comment_on}/comments", {"body": preview})
+        print(f"\nPosted visibility comment on {args.post_comment_on}.")
+
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
