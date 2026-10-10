@@ -90,7 +90,19 @@ class WorkerRegistry:
         self._retiring.add(worker)
         # Re-check on the main thread shortly after it reports finished, when
         # the thread has actually wound up and letting go of it is safe.
-        worker.finished.connect(lambda: QTimer.singleShot(0, self.prune))
+        #
+        # A bound method, not a lambda: `finished` is emitted from the dying
+        # thread, so the call is queued to the GUI thread and can sit in the
+        # event queue across a garbage collection. A lambda closing over
+        # `self` is collectable along with the registry and its worker, and
+        # the collector clears it (code and all) while PyQt's queued call
+        # still points at it - the next event-loop turn then calls a hollow
+        # function and segfaults. A bound method keeps its function on the
+        # class, and PyQt drops the call if `self` is already gone.
+        worker.finished.connect(self._prune_soon)
+
+    def _prune_soon(self) -> None:
+        QTimer.singleShot(0, self.prune)
 
     def retire_attrs(self, owner, names: Iterable[str],
                      grace_ms: int = DEFAULT_GRACE_MS,

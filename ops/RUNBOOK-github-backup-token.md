@@ -62,24 +62,46 @@ curl -s -H "authorization: Bearer $GITHUB_BACKUP_TOKEN" -H 'accept: application/
 
 Prefix the variable inline for each command. Do **not** `export GH_TOKEN`, and do not `gh auth login --with-token` (it persists the token to disk).
 
-### Merging in fallback: `scripts/merge_pr.sh` needs a different invocation
+### Merging in fallback: use `scripts/merge_pr_backup.sh`
 
-Merges still go through `scripts/merge_pr.sh` (policy buckets, author/executor rules (DAN-220) and approval gates are unaffected: they key on agent seats, not GitHub logins). **But the inline prefix used above does not work for it.** `GH_TOKEN="$GITHUB_BACKUP_TOKEN" scripts/merge_pr.sh N` fails with `gh auth login` / "populate the GH_TOKEN environment variable", because:
-
-1. the launcher `gh` shim on `PATH` strips `GH_TOKEN`/`GITHUB_TOKEN` from the environment before running the real `gh`, and
-2. the run's `BASH_ENV` hook (`$PAPERCLIP_GITHUB_LAUNCHER_DIR/.bashrc`) re-prepends the shim directory to `PATH` in **every** bash script spawned, including `merge_pr.sh`, so the `gh` calls inside the script always hit the shim (same `BASH_ENV` family as DAN-890).
-
-Do not "simplify" this back to the inline prefix. The working form, verified on DAN-1196 (PR #14) and re-verified on DAN-1218:
+Merges still go through `scripts/merge_pr.sh` (policy buckets, author/executor rules (DAN-220) and approval gates are unaffected: they key on agent seats, not GitHub logins). **Do not run it as `GH_TOKEN="$GITHUB_BACKUP_TOKEN" scripts/merge_pr.sh N`**, and do not hand-assemble a `bash -c '...'` one-liner. Use the wrapper (DAN-1284), after the section-1 probe returns `unavailable`:
 
 ```sh
-bash -c 'unset BASH_ENV; PATH=/usr/bin:$PATH GH_TOKEN="$GITHUB_BACKUP_TOKEN" scripts/merge_pr.sh N'
+scripts/merge_pr_backup.sh N [extra merge_pr.sh args, e.g. --squash]
 ```
 
-`unset BASH_ENV` stops the hook re-injecting the shim; putting `/usr/bin` first makes `gh` resolve to the real binary; `GH_TOKEN` is set only for that one command. The single quotes mean the outer shell never expands the value, so it is not in argv, not exported, not printed and not persisted. `merge_pr.sh` runs unmodified, including its staleness gate. The same form works for any other script that calls `gh` (swap in the script name). **Plain `gh` commands need it too whenever the shim is first on `PATH`.** Re-measured on DAN-1218: `GH_TOKEN="$GITHUB_BACKUP_TOKEN" gh pr create ...` run directly failed with the same `gh auth login` message on Virgil's seat, because the shim strips the token before the real `gh` runs. If the simple prefix in the block above yields that message, use the same form with `gh` in place of the script: `bash -c 'unset BASH_ENV; PATH=/usr/bin:$PATH GH_TOKEN="$GITHUB_BACKUP_TOKEN" gh pr create ...'` (the `/usr/bin` ordering is what matters; `unset BASH_ENV` is for nested scripts).
+It runs `merge_pr.sh` unmodified, staleness gate included, and exits with its status (0 merged, 1 stale, 2 usage/setup, else `gh`'s). It fails closed with exit 2 if `GITHUB_BACKUP_TOKEN` is unset or if it cannot find a real `gh`/`git` outside the launcher shim. What it works around, each measured:
 
-## 4a. Approver verification needs no token (read-only, credential-free)
+1. The launcher `gh`/`git` shims strip `GH_TOKEN`, `GITHUB_TOKEN` and `GIT_CONFIG_*` before running the real binary, so the inline prefix never reaches `gh` (it fails with `gh auth login` / "populate the GH_TOKEN environment variable").
+2. The run's `BASH_ENV` hook (`$PAPERCLIP_GITHUB_LAUNCHER_DIR/.bashrc`) **overwrites `PATH` wholesale** in every non-interactive bash, including `merge_pr.sh`, so the shim is first again inside the script. (Same `BASH_ENV` family as DAN-890.) The wrapper removes the launcher directory from `PATH` and unsets `BASH_ENV`.
+3. `merge_pr.sh` resolves the PR head SHA through `gh`, then asks `git` about it. In a clone that never fetched the head, git answers `fatal: Not a valid commit name <sha>` and the script then **misreports the PR as stale** (`ABORT: PR #N is stale`). This is what broke the older `bash -c 'unset BASH_ENV; PATH=/usr/bin:$PATH GH_TOKEN=... scripts/merge_pr.sh N'` form on DAN-1283: it only appeared to work (DAN-1196, DAN-1218) where the head object was already local. The wrapper first runs `git fetch origin refs/pull/N/head`. Reproduced in a `--depth 1` clone on DAN-1284: old form aborts with the fatal above; wrapper reaches the real staleness verdict.
+4. `check_merge_base.sh` runs `git fetch`, which can need credentials (anonymous fetch worked on 2026-10-10, but do not depend on that). The wrapper passes the section-3 one-shot credential helper via `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` environment variables, which reach the real `git` only because the shim is bypassed.
 
-Approvers (Minos, Oderisi) never need the backup token (§6). When the probe says `unavailable`, verify a merge with **anonymous** GitHub REST reads. This repo is public to unauthenticated reads of pulls, commits, compare and check-runs:
+The token is never echoed, never in argv, a URL or git config, and never exported: `GH_TOKEN` is a prefix assignment on the final `exec`, and the git helper reads `$GITHUB_BACKUP_TOKEN` from the environment at call time. Verified with a stub `gh`: it saw `GH_TOKEN` set (length only printed), `BASH_ENV` unset, and no occurrence of the token in its own or its parent's `/proc/*/cmdline`; the clone's `.git/config` held no credential entry.
+
+Plain `gh` commands (`gh pr create ...`) have the same shim problem. The wrapper is merge-only; for anything else use the same two moves by hand, one command at a time: `env -u BASH_ENV PATH=<PATH minus the launcher dir> GH_TOKEN="$GITHUB_BACKUP_TOKEN" gh ...` (the prefix assignment sits outside any quotes that would expose the value).
+
+## 4a. Verify a merge SHA without any identity (approvers: Minos, Oderisi)
+
+Approvers never need the backup token (section 6). When the probe says `unavailable`, verify a merge with **anonymous** reads. The repo is public to unauthenticated reads. Both paths are read-only and cannot write. Use them instead of escalating "I cannot verify while GitHub is unavailable" (CEO verified `b4cd5bc` on DAN-1283 this way; REST path also verified on DAN-1196 and DAN-1218).
+
+**Git, no token, no `gh`.** Use the real binary directly so the shim's "unavailable" banner does not matter (`/usr/bin/git`), in a scratch directory:
+
+```sh
+URL=https://github.com/Dromares/Hatate-Linux-Redux.git
+git ls-remote $URL refs/heads/main refs/pull/N/head       # is main at/after the merge? PR head SHA?
+git init -q verify && cd verify
+git fetch -q --no-tags $URL refs/heads/main:refs/remotes/origin/main refs/pull/N/head:refs/remotes/pull/N
+git cat-file -t <merge-sha>                                        # expect: commit
+git merge-base --is-ancestor <merge-sha> origin/main && echo on-main
+git rev-list --parents -n1 <merge-sha>                             # sha, first parent (base main), second parent (PR head)
+git rev-parse pull/N                                               # must equal the second parent
+git diff --stat <merge-sha>^1 <merge-sha>                          # first-parent diff = exactly what the PR landed
+```
+
+Check that the second parent equals the PR head SHA you approved, and that the first-parent diffstat matches the PR's declared diffstat. For a merge commit this is the full effect of the merge; for a squash the parent list has one entry, so compare `git diff --stat <sha>^ <sha>` instead. `git fetch <url> <merge-sha>` by raw SHA also worked anonymously on 2026-10-10, but fetching refs is the form that also proves the SHA is on main.
+
+**REST, no token.** Four calls cover pulls, commits, compare and check-runs:
 
 ```sh
 R=https://api.github.com/repos/Dromares/Hatate-Linux-Redux
@@ -89,9 +111,8 @@ curl -s $R/compare/main...<merge-sha>        # merge SHA is on main when status 
 curl -s $R/commits/<head-sha>/check-runs     # dedupe per gate, see AGENTS.md CI evidence rules
 ```
 
-- No `Authorization` header, no token of any kind: these calls are read-only and cannot write.
-- Rate limit is **60 requests/hour per IP**; check `x-ratelimit-remaining` (`curl -sI`) if you are sweeping. Budget a verification at about 4 calls.
-- Use this instead of escalating "I cannot verify while GitHub is unavailable". Verified on DAN-1196 (PR #14 merge SHA) and re-verified on DAN-1218.
+- No `Authorization` header, no token of any kind.
+- REST rate limit is **60 requests/hour per IP**; check `x-ratelimit-remaining` (`curl -sI`) if you are sweeping. Budget a verification at about 4 calls. The git path is not subject to that limit.
 - Anonymous reads cannot see anything private; if a call 404s on something that should exist, say so rather than reaching for the backup token.
 
 ## 5. Read-only exercise (no throwaway pushes)
