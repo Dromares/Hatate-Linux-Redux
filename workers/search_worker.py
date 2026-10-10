@@ -323,6 +323,7 @@ class SearchWorker(QThread):
                 log.info("Search worker stopping early at %d/%d (user requested)", i, total)
                 break
 
+            entry.interrupted_mid_search = False   # being searched again: the restore's note is spent
             entry.status = MatchStatus.SEARCHING
             self.image_updated.emit(entry)
 

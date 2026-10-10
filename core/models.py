@@ -207,6 +207,13 @@ class ImageEntry:
                                                  # self-consistency), shown as the Upscale column's
                                                  # tooltip and carried into exports
 
+    # The row that was being searched when the previous run died, found by
+    # the restore path (S-02). The table says so in its Engine cell until
+    # the row is searched again. Not persisted - it describes what the
+    # restore found, and a save would only carry it into runs that never
+    # had that crash.
+    interrupted_mid_search: bool = False
+
     # Bumped on every field write (see __setattr__). The session store
     # writes only entries whose revision moved since the last save, which
     # is what makes an autosave cost milliseconds instead of re-encoding
@@ -218,7 +225,7 @@ class ImageEntry:
     # for every row a background worker decodes, which would otherwise
     # mark the entire visible list dirty on every scroll.
     _UNTRACKED_FIELDS = frozenset({
-        "revision", "matched_thumb_bytes", "file_missing",
+        "revision", "matched_thumb_bytes", "file_missing", "interrupted_mid_search",
     })
 
     def __setattr__(self, name, value):

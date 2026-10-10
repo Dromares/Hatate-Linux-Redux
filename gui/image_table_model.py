@@ -29,7 +29,7 @@ from PyQt6.QtGui import QFont, QIcon
 
 from core.entry_filter import EntryFilter, upscale_verdict_label
 from core.image_compare import compact_size_delta, size_delta_sort_key
-from core.models import ImageEntry
+from core.models import ImageEntry, MatchStatus
 from core.similarity_display import (
     ESTIMATE_CHIP, similarity_label, similarity_tooltip,
 )
@@ -172,6 +172,18 @@ def _entry_engine_label(entry: ImageEntry) -> str:
     return candidate.engine if candidate else ""
 
 
+# What the Engine cell says for the row that was being searched when the
+# previous run died (S-02): not an engine, because none had answered.
+INTERRUPTED_MARKER = "\u2014 interrupted mid-search"
+
+
+def _is_interrupted(entry: ImageEntry) -> bool:
+    """Whether the row still carries the restore's "was in flight" note.
+    Only while it is unsearched: a row with a result has moved on, and
+    the note would then contradict the cell beside it."""
+    return entry.interrupted_mid_search and entry.status == MatchStatus.NOT_SEARCHED
+
+
 def _entry_cache_label(entry: ImageEntry) -> str:
     """Whether the entry's current result came from the local search
     cache or a fresh IQDB/SauceNAO search, for the Cache table column.
@@ -294,6 +306,13 @@ class ImageTableModel(QAbstractTableModel):
             return self._chip(entry, col)
         if role == Qt.ItemDataRole.ForegroundRole:
             return self._foreground(entry, col)
+        if (role == Qt.ItemDataRole.FontRole and col == COL_ENGINE
+                and not _entry_engine_label(entry) and _is_interrupted(entry)):
+            # Italic is all this sets, so the view's own face and size carry
+            # through (Qt resolves a font from an item against the view's).
+            italic = QFont()
+            italic.setItalic(True)
+            return italic
         if role == Qt.ItemDataRole.FontRole and col in (COL_SIZE_DELTA, COL_UPSCALE):
             # Neither column goes through ChipDelegate, so there is no
             # per-character font switch available to it the way the
@@ -322,7 +341,8 @@ class ImageTableModel(QAbstractTableModel):
         if col == COL_STATUS:
             return entry.status.label
         if col == COL_ENGINE:
-            return _entry_engine_label(entry)
+            return _entry_engine_label(entry) or (
+                INTERRUPTED_MARKER if _is_interrupted(entry) else "")
         if col == COL_SIMILARITY:
             return similarity_label(entry.similarity, entry.similarity_measured)
         if col == COL_SIZE_DELTA:
@@ -385,6 +405,10 @@ class ImageTableModel(QAbstractTableModel):
             # compared or sent - so it fades the same way QPushButton/
             # QComboBox's own :disabled state does, at ink_45.
             return theme.ink_color(mode, "ink_45")
+        if col == COL_ENGINE and not _entry_engine_label(entry) and _is_interrupted(entry):
+            # A note, not a result: the body-safe dim tier, which still
+            # clears the text-contrast floor (ink_45 does not).
+            return theme.ink_color(mode, "ink_65")
         if col == COL_REVIEWED and entry.reviewed:
             # The same routine-not-alarming tier a confirmed send uses:
             # both mean the row is finished with, and they should read

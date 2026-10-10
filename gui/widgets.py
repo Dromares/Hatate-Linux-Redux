@@ -29,6 +29,8 @@ SPLITTER_HANDLE = 12
 INPUT_MIN_HEIGHT = 38     # a single-line edit crushed below this stops being readable
 BUTTON_MIN_HEIGHT = 40    # tokens.css's page-level button, plus the 36px boxed icon below
 ICON_BOX = 36
+RUN_BANNER_PROSE_WIDTH = 840   # the mockup's `.run-banner__detail` max-width
+RUN_BANNER_MARGINS = (24, 24, 24, 24)   # its `padding: var(--space-5)`
 SURVIVED_GLYPH_BOX = 42   # the mockup's boxed ✕: a 32px glyph in a hairline square
 
 
@@ -94,73 +96,120 @@ def section_header(text, *trailing):
     return row
 
 
+class WrappingLabel(QLabel):
+    """A word-wrapped label that asks for the height its text needs at the
+    width it was actually given.
+
+    A plain wrapped QLabel inside a frame reports the height of its text
+    UNWRAPPED, so a paragraph that wraps draws over (or under) whatever
+    sits below it - the frame's own layout never learns the width. Here
+    the minimum height follows the width, and the layout is re-asked.
+    """
+
+    def __init__(self, text=''):
+        super().__init__(text)
+        self.setWordWrap(True)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        needed = self.heightForWidth(self.width())
+        if needed > 0 and needed != self.minimumHeight():
+            self.setMinimumHeight(needed)
+
+    def setText(self, text):
+        super().setText(text)
+        needed = self.heightForWidth(self.width())
+        if needed > 0:
+            self.setMinimumHeight(needed)
+
+
 def run_banner():
-    """The crash-recovery notice (DAN-660): a `card()`-shaped frame with a
-    status glyph, a headline, a per-category body line, and three actions.
+    """The interrupted-run notice (DAN-660, S-01): a bracketed frame with a
+    status glyph, a kicker, reassuring prose, a meta line, and three actions
+    in a row beneath.
 
     Returns the frame plus its content widgets, since the banner holds no
     state of its own - the caller (MainWindow, which knows the restored
-    entries) fills in the body text and wires the actions to its own
-    existing behaviour.
+    entries) fills in the prose and the meta line and wires the actions to
+    its own existing behaviour. The meta line is added into `meta_slot`
+    when it is known, because its figures come from what is on disk then.
     """
     frame = QFrame()
     frame.setObjectName('RunBanner')
     layout = QHBoxLayout(frame)
-    layout.setContentsMargins(*CARD_MARGINS)
+    layout.setContentsMargins(*RUN_BANNER_MARGINS)
     layout.setSpacing(CARD_SPACING)
+    layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
     glyph = QLabel(theme.status_glyph('poor'))
     glyph.setObjectName('RunBannerGlyph')
-    layout.addWidget(glyph)
+    layout.addWidget(glyph, 0, Qt.AlignmentFlag.AlignTop)
 
     text_col = QVBoxLayout()
-    text_col.setSpacing(2)
-    head = QLabel("Run interrupted")
+    text_col.setSpacing(8)
+    # The kicker is sentence case with the capitals in the font, as
+    # `section_label` does: the string stays readable to anything that
+    # reads `.text()`.
+    head = QLabel("Run interrupted \u2014 partial results survived")
     head.setObjectName('RunBannerHead')
+    uppercase_voice(head)
     text_col.addWidget(head)
-    body = QLabel()
+    body = WrappingLabel()
     body.setObjectName('RunBannerBody')
-    body.setWordWrap(True)
+    body.setMaximumWidth(RUN_BANNER_PROSE_WIDTH)
     text_col.addWidget(body)
-    layout.addLayout(text_col, 1)
+    meta_slot = QVBoxLayout()
+    meta_slot.setContentsMargins(0, 0, 0, 0)
+    text_col.addLayout(meta_slot)
 
-    resume_button = pill_button("Resume Queue", primary=True)
-    layout.addWidget(resume_button)
-
-    crash_log_button = pill_button("View Crash Log")
-    layout.addWidget(crash_log_button)
-
-    # Deliberately the quietest element on the banner, not a stamped
+    # The action hierarchy is unchanged from DAN-660 and is not to be
+    # restyled for the frame: Resume is the one primary, and "Discard" is
+    # deliberately the quietest element on the banner, not a stamped
     # button - error-cost asymmetry: a wrong delete costs more than a
-    # wrong tag, so "Discard" never gets primary-button weight.
+    # wrong tag, so it never gets primary-button weight.
+    actions = QHBoxLayout()
+    actions.setSpacing(12)
+    resume_button = pill_button("Resume Queue", primary=True)
+    actions.addWidget(resume_button)
+    crash_log_button = pill_button("View Crash Log")
+    actions.addWidget(crash_log_button)
     discard_label = LinkLabel("Discard &amp; start fresh")
     discard_label.setObjectName('RunBannerDiscard')
-    layout.addWidget(discard_label)
+    actions.addWidget(discard_label)
+    actions.addStretch(1)
+    text_col.addLayout(actions)
+    layout.addLayout(text_col, 1)
 
+    Brackets(frame)
     return frame, {
+        'glyph': glyph,
         'head': head,
         'body': body,
+        'meta_slot': meta_slot,
         'resume_button': resume_button,
         'crash_log_button': crash_log_button,
         'discard_label': discard_label,
     }
 
 
-def meta_line(items):
+def meta_line(items, centered=True):
     """The mockup's `.run-banner__meta`: a mono-caps row of `label  FIGURE`
     pairs, the figure bright and bold against its dim label.
 
     A QLabel can only do that with inline colours, which would pin it to
     one theme, so each run is its own label (the same shape as the run
     strip's `Readout`). `items` is `[(label, figure), ...]`; returns the
-    row widget and its flat list of labels, in order.
+    row widget and its flat list of labels, in order. Centred under a
+    centred block (S-05); `centered=False` sets it flush left under the
+    run banner's prose (S-01).
     """
     row = QWidget()
     row.setObjectName('MetaLine')
     layout = QHBoxLayout(row)
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(24)
-    layout.addStretch(1)
+    if centered:
+        layout.addStretch(1)
     labels = []
     for label_text, figure_text in items:
         pair = QHBoxLayout()

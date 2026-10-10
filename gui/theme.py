@@ -390,13 +390,14 @@ def stylesheet(mode):
             min-height: 1px;
     }}
 
-    /* ---- the crash-recovery notice (DAN-660) - same flat-panel shape
-       as Card, named separately because it carries its own hairline
-       border (an ordinary Card doesn't) so it still reads as "something
-       happened" against an otherwise identical page. No new ink tier or
-       glyph here - RunBannerGlyph reuses STATUS_GLYPHS['poor']/
-       STATUS_WEIGHTS['poor'] exactly, which is why its colour is
-       {ink_100} rather than a dedicated token. ---- */
+    /* ---- the interrupted-run notice (DAN-660, S-01) - a flat panel with
+       the dossier's corner marks laid over it by widgets.Brackets, so it
+       reads as the same frame the empty Queue is drawn in. Its hairline
+       stays the border tier (ink_46, not the drop zone's decorative
+       ink_18): a notice's edge is a boundary the user has to see, and the
+       contrast sweep holds it to 3:1. No new ink tier or glyph: RunBannerGlyph reuses
+       STATUS_GLYPHS['poor']/STATUS_WEIGHTS['poor'] exactly, which is why
+       its colour is {ink_100} rather than a dedicated token. ---- */
     QFrame#RunBanner {{
             background: {card};
             border: 1px solid {ink_46};
@@ -407,14 +408,13 @@ def stylesheet(mode):
             color: {ink_100};
             background: transparent;
     }}
-    /* No font-weight here: Space Grotesk (the default QWidget family)
-       ships weight 400 only - a declared 600 would silently render as
-       400 anyway (DAN-148's TestFontWeightsMatchTheRegisteredFace would
-       catch it). ink_100 alone carries the emphasis, same as
-       STATUS_WEIGHTS' "ink-100 bold for needs-a-decision" above - that
-       pairing is already a colour tier standing in for weight, not a
-       literal font-weight declaration. */
+    /* The kicker: mono, tracked, uppercase (the capitals are in the font,
+       see widgets.uppercase_voice), the loudest ink. Bold is a real
+       weight here - the mono face ships a bold, as MetaFigure's use shows. */
     QLabel#RunBannerHead {{
+            font-family: {font_mono};
+            font-size: 11px;
+            font-weight: 700;
             color: {ink_100};
             background: transparent;
     }}
