@@ -435,7 +435,7 @@ def stylesheet(mode):
        mockup's --text-display; the face stays Source Serif 4 (ruling C-2
        on DAN-1155: the mockup rendered Space Grotesk only because of a
        CSS comment bug, DAN-1156 M-2). ---- */
-    QLabel#ScreenTitle {{
+    QLabel#ScreenTitle, QLabel#DisplayTitle {{
             font-family: {font_serif};
             font-size: 36px;
             font-weight: 600;
