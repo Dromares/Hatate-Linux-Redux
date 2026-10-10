@@ -59,7 +59,7 @@ from core.viewport import entries_needing_thumbnails, visible_range_with_buffer
 from core.tag_colors import get_tag_color
 from core.tag_rules import apply_inline_edit
 from gui import theme, widgets
-from gui.shell import ShellMixin
+from gui.shell import IDLE_ETA, IDLE_PROGRESS, ShellMixin
 from gui.review_view import ReviewViewMixin
 from gui.activity_view import ActivityViewMixin
 from gui.table_delegates import ChipDelegate
@@ -368,6 +368,9 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         # left" for a run that is no longer moving would be a lie.
         self._run_estimate = RunEstimate()
         self._run_active = False
+        # True once a run has put a count on the strip. Until then the strip
+        # follows the list ("nothing queued" / "N not searched").
+        self._run_counted = False
         self.worker: Optional[SearchWorker] = None
         self.candidate_worker: Optional[CandidateFetchWorker] = None
         self.hydrus_lookup_worker: Optional[HydrusTagLookupWorker] = None
@@ -2078,22 +2081,38 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
 
         The count goes up as soon as there is one; the estimate joins it
         a couple of images later, once there is enough of the run to
-        average. Nothing here writes to `status_label`, which the
-        rate-limit wait overwrites continuously.
+        average. The count is what the gauge draws - images SEARCHED -
+        and the estimate lives in its own right-aligned readout. With no
+        run to report the strip says so rather than going blank (R-05).
+        Nothing here writes to `status_label`, which the rate-limit wait
+        overwrites continuously.
         """
         done = self.progress_bar.value()
         total = self.progress_bar.maximum()
-        if total <= 0:
-            self.run_progress_label.setText("")
+        if total <= 0 or (done <= 0 and not self._run_active):
+            self.run_progress_label.setText(self._idle_run_text())
+            self.run_eta_label.setText(IDLE_ETA)
             return
-        parts = [f"{done:,}/{total:,}"]
+        self._run_counted = True
+        self.run_progress_label.setText(f"{done:,}/{total:,} searched")
         remaining = self._run_estimate.seconds_remaining() if self._run_active else -1.0
         if remaining >= 0:
-            parts.append(f"~{_format_duration(remaining)} left")
+            eta = f"ETA ~{_format_duration(remaining)}"
             finish = _format_finish_time(remaining)
             if finish:
-                parts.append(finish)
-        self.run_progress_label.setText(" · ".join(parts))
+                eta += f" · {finish}"
+            self.run_eta_label.setText(eta)
+        else:
+            self.run_eta_label.setText(IDLE_ETA)
+
+    def _idle_run_text(self):
+        """What the strip's count says when no run is under way.
+
+        "nothing queued" is only true of an empty list. With images listed
+        but not yet searched the strip says how many are waiting instead.
+        """
+        waiting = sum(1 for e in self.entries if e.status == MatchStatus.NOT_SEARCHED)
+        return f"{waiting:,} not searched" if waiting else IDLE_PROGRESS
 
     def _on_worker_waiting(self, seconds: float):
         self.status_label.setText(f"Waiting {seconds:.0f}s before next search (rate limiting)…")
@@ -2102,7 +2121,9 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         if not label or remaining <= 0:
             self.wait_countdown_label.setText("")
             return
-        self.wait_countdown_label.setText(f"{label}: {remaining:.0f}s")
+        # The mockup's vocabulary: "waiting 38s", not "Rate limit: 38s".
+        what = "waiting" if label == "Rate limit" else label.lower()
+        self.wait_countdown_label.setText(f"{what} {remaining:.0f}s")
 
     def _on_auto_imported(self, entry: ImageEntry, result: ImportResult):
         """Handles the result of a background auto-import (Settings >
@@ -2170,7 +2191,8 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
 
     def _render_saucenao_quota_label(self):
         quota = get_last_quota()
-        self.saucenao_quota_label.setText(describe_quota(quota))
+        # "SauceNAO 142/200 used today" - the mockup has no colon.
+        self.saucenao_quota_label.setText(describe_quota(quota).replace("SauceNAO: ", "SauceNAO ", 1))
         self.saucenao_quota_label.setToolTip(describe_short_window(quota))
 
     def _on_paused_out_of_quota(self, searched: int, remaining: int):
@@ -2388,10 +2410,14 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         total = len(self.entries)
         if not total:
             self.sent_count_label.setText("")
+            if not self._run_counted and not self._run_active:
+                self.run_progress_label.setText(self._idle_run_text())
             return
         sent = sum(1 for e in self.entries if e.sent_to_hydrus and e.hydrus_import_confirmed)
         queued = sum(1 for e in self.entries if e.sent_to_hydrus and not e.hydrus_import_confirmed)
-        text = f"{sent}/{total} sent"
+        # The total is the searched count's to give (`n/m searched`); what
+        # is sent is its own number (R-04).
+        text = f"{sent} sent"
         if queued:
             text += f" ({queued} queued)"
         # Only once something has actually been reviewed. Before that the
@@ -2400,6 +2426,8 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         if any(e.reviewed for e in self.entries):
             text += f" · {sum(1 for e in self.entries if e.needs_review)} to review"
         self.sent_count_label.setText(text)
+        if not self._run_counted and not self._run_active:
+            self.run_progress_label.setText(self._idle_run_text())
 
     def _refresh_entry_row(self, entry: ImageEntry):
         # Deliberately repaints in place rather than re-applying the

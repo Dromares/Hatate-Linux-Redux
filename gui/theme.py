@@ -833,6 +833,32 @@ def stylesheet(mode):
     QProgressBar::chunk {{
             background: {stamp_bg};
     }}
+    /* The run strip's gauge (R-02): a 2px line, not a bar. Its track is
+       ink_46, the border tier, because the old card_alt track measured
+       1.08:1 (dark) / 1.28:1 (light) against the strip and read as an
+       empty black slab; ink_46 clears the 3:1 non-text floor in both
+       modes. The fill is full ink. */
+    QProgressBar#RunGauge {{
+            background: {ink_46};
+            border: none;
+            height: 2px; min-height: 2px; max-height: 2px;
+    }}
+    QProgressBar#RunGauge::chunk {{
+            background: {ink_100};
+    }}
+    /* The run strip's readouts: mono labels at ink_65 (text, so 4.5:1)
+       with the figures bold at full ink, as the mockup's
+       `.run-strip__kv b`. See gui/shell.py's Readout. */
+    QLabel#RunReadout, QLabel#RunFigure {{
+            font-family: {font_mono};
+            font-size: 11px;
+            background: transparent;
+    }}
+    QLabel#RunReadout {{ color: {ink_65}; }}
+    QLabel#RunFigure {{
+            font-family: {font_mono};
+            color: {ink_100}; font-weight: 700;
+    }}
 
     /* ---- slider ---- */
     QSlider::groove:horizontal {{

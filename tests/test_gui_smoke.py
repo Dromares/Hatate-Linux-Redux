@@ -263,12 +263,14 @@ class TestMainWindowSignalHandlers(GuiTestCase):
         self.win._on_worker_finished()
 
     def test_progress_label_shows_the_count_then_the_estimate(self):
-        """The count appears immediately; the estimate joins it once
-        there is enough of the run to average a pace from."""
+        """The count appears immediately; the estimate joins it (in its own
+        right-aligned readout, DAN-1162) once there is enough of the run to
+        average a pace from."""
         self.win._run_active = True
         self.win._on_worker_progress(1, 24000)
         self.assertIn("1/24,000", self.win.run_progress_label.text())
         self.assertNotIn("left", self.win.run_progress_label.text())
+        self.assertNotIn("~", self.win.run_eta_label.text())
 
         # Three signals a minute apart: 60s an image, 23,997 to go.
         self.win._run_estimate.reset()
@@ -276,8 +278,8 @@ class TestMainWindowSignalHandlers(GuiTestCase):
             self.win._run_estimate.record(done, 24000, now=t)
         self.win.progress_bar.setValue(3)
         self.win._refresh_run_progress_label()
-        text = self.win.run_progress_label.text()
-        self.assertIn("3/24,000", text)
+        self.assertIn("3/24,000", self.win.run_progress_label.text())
+        text = self.win.run_eta_label.text()
         self.assertIn("16d", text)      # 23,997 x 60s
         self.assertIn("ends", text)
 
@@ -290,13 +292,15 @@ class TestMainWindowSignalHandlers(GuiTestCase):
         self.win.progress_bar.setMaximum(24000)
         self.win.progress_bar.setValue(3)
         self.win._refresh_run_progress_label()
-        self.assertIn("left", self.win.run_progress_label.text())
+        self.assertIn("~", self.win.run_eta_label.text())
 
         self.win._on_worker_finished()                     # Stop, quota pause, or the end
         text = self.win.run_progress_label.text()
         self.assertIn("3/24,000", text)
         self.assertNotIn("left", text)
         self.assertNotIn("ends", text)
+        self.assertNotIn("~", self.win.run_eta_label.text())
+        self.assertNotIn("ends", self.win.run_eta_label.text())
 
     def test_hash_and_thumbnail_progress_handlers(self):
         self.win._on_file_hash_progress(5, 10, 30.0)       # with an estimate
