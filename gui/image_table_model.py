@@ -25,7 +25,7 @@ from __future__ import annotations
 from typing import Callable, List, Optional
 
 from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QFont, QIcon
 
 from core.entry_filter import EntryFilter, upscale_verdict_label
 from core.image_compare import compact_size_delta, size_delta_sort_key
@@ -35,7 +35,7 @@ from core.similarity_display import (
 )
 from gui import theme
 
-COLUMNS = ["Thumb", "File", "Status", "Engine", "Similarity", "Size Difference",
+COLUMNS = ["Thumb", "File", "Status", "Engine", "Similarity", "Size diff.",
            "Booru", "Tags", "Cache", "Sent", "Reviewed", "Upscale"]
 
 # Which chip a cell should be drawn as, for ChipDelegate. A role rather
@@ -46,6 +46,38 @@ CHIP_ROLE = Qt.ItemDataRole.UserRole + 10
 COL_THUMB, COL_FILE, COL_STATUS, COL_ENGINE, COL_SIMILARITY = 0, 1, 2, 3, 4
 COL_SIZE_DELTA, COL_BOORU, COL_TAGS, COL_CACHE, COL_SENT = 5, 6, 7, 8, 9
 COL_REVIEWED, COL_UPSCALE = 10, 11
+
+HEADER_TRACKING = 110  # percent: tokens.css's 0.1em on the table headers
+
+# First-run column widths as shares of the width left once the thumbnail
+# column has its own. The last column (Upscale) is the stretch section and
+# takes whatever remains, so it has no entry. Proportions rather than
+# pixel widths: at 1360 and at 1440 the default layout has to fill the
+# viewport without a horizontal scrollbar (Q-04), which a fixed total
+# cannot do at both.
+DEFAULT_COLUMN_SHARES = {
+    COL_FILE: 0.18, COL_STATUS: 0.10, COL_ENGINE: 0.08, COL_SIMILARITY: 0.09,
+    COL_SIZE_DELTA: 0.09, COL_BOORU: 0.09, COL_TAGS: 0.05, COL_CACHE: 0.06,
+    COL_SENT: 0.07, COL_REVIEWED: 0.08,
+}
+# Floors for the shares: below these the (uppercase, tracked) header title
+# or the longest chip elides.
+DEFAULT_COLUMN_MINIMUMS = {
+    COL_FILE: 140, COL_STATUS: 120, COL_ENGINE: 80, COL_SIMILARITY: 100,
+    COL_SIZE_DELTA: 100, COL_BOORU: 80, COL_TAGS: 60, COL_CACHE: 70,
+    COL_SENT: 80, COL_REVIEWED: 100,
+}
+
+
+def default_column_widths(viewport_width: int, thumb_width: int) -> dict:
+    """{column: width} for a first run (no saved layout) in a viewport
+    `viewport_width` wide. The last column is left out: it stretches."""
+    room = max(0, viewport_width - thumb_width)
+    return {
+        col: max(DEFAULT_COLUMN_MINIMUMS[col], int(room * share))
+        for col, share in DEFAULT_COLUMN_SHARES.items()
+    }
+
 
 _MISSING_TOOLTIP = (
     "This file is no longer on disk - most likely deleted from Hydrus.\n"
@@ -72,7 +104,7 @@ _UPSCALE_NOT_CHECKED_TOOLTIP = (
 
 
 def _upscale_glyph(entry: ImageEntry) -> str:
-    """'▲' (flagged - the same shape the Size Difference column's
+    """'▲' (flagged - the same shape the Size diff. column's
     upgrade case uses, both reading "a bigger/better version exists").
     '●' for clear - the same confirmed-positive shape the Status and
     Sent columns use for 'good'/'sent'. Nothing for not yet checked: the
@@ -96,7 +128,7 @@ def _upscale_weight(entry: ImageEntry) -> str:
 
 
 def _entry_size_delta_label(entry: ImageEntry) -> str:
-    """The Size Difference cell: how the match compares with the local
+    """The Size diff. cell: how the match compares with the local
     file, always expressed relative to the local one."""
     candidate = entry.selected_candidate
     if candidate is None:
@@ -222,6 +254,18 @@ class ImageTableModel(QAbstractTableModel):
         return len(COLUMNS)
 
     def headerData(self, section: int, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if role == Qt.ItemDataRole.FontRole and orientation == Qt.Orientation.Horizontal:
+            # The column titles' type voice (Q-03). QSS has no text-transform
+            # or letter-spacing, and a font set on the header widget is
+            # replaced when the stylesheet's `::section` rule paints, so the
+            # model is the one place the caps survive. The text stays
+            # "Size diff.": the accessible name and any copy are not shouting.
+            font = theme.mono_font()
+            font.setPixelSize(10)
+            font.setBold(True)
+            font.setCapitalization(QFont.Capitalization.AllUppercase)
+            font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, HEADER_TRACKING)
+            return font
         if role != Qt.ItemDataRole.DisplayRole:
             return None
         if orientation == Qt.Orientation.Horizontal:

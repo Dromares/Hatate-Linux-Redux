@@ -37,6 +37,10 @@ DARK = {
     'page': '#0d0d0d',
     'card': '#141414',
     'card_alt': '#090909',
+    # ink_06 composited over card: the Queue's zebra stripe (Q-06). Opaque
+    # on purpose - a translucent alternate-background-color is composited
+    # differently by each style, and this must read the same everywhere.
+    'zebra': '#1f1f1e',
     # The one accent: a full fg/bg swap instead of a hue, used for the
     # primary button, the active segment, and a selected row alike.
     'stamp_bg': '#cdc4ba',
@@ -90,6 +94,7 @@ LIGHT = {
     'page': '#e8e1d2',
     'card': '#f2ede1',
     'card_alt': '#ddd2bd',
+    'zebra': '#e6e0d5',  # ink_06 over card, as in DARK
     'stamp_bg': '#211d17',
     'stamp_fg': '#f6f1e6',
     # Not a mechanical inversion of dark's alphas - ink on paper subtracts
@@ -769,16 +774,12 @@ def stylesheet(mode):
             selection-color: {stamp_fg};
             outline: none;
     }}
-    /* Deliberately no `alternate-background-color` and no call to
-       setAlternatingRowColors: {card_alt} is this sheet's interaction
-       tone everywhere else it appears (hover, pressed, selected menu
-       item) - it means "you're touching this", not "every other row".
-       Rendered both ways on the Queue table (both themes) to check:
-       dark reads fine because the two tones sit close, but the same
-       rule in light theme turns the row colour it uses for hover/press
-       into a loud, almost tan zebra stripe down the whole list - noise,
-       not structure, at real row counts. Left off in both so the table
-       looks the same in either theme. */
+    /* The mockup's zebra (Q-06): ink at 6% over the card, via the
+       view's setAlternatingRowColors. Not {card_alt}: that is this sheet's
+       interaction tone (hover, pressed, selected menu item), and in the
+       light theme it turned the Queue into a loud tan stripe. {zebra} is
+       a much quieter wash, composited to an opaque colour in the palette. */
+    QTableView {{ alternate-background-color: {zebra}; }}
     /* Deliberately NO `QTableView::item` rule. Styling an item switches Qt
        to styled-item painting, at which point the model's BackgroundRole is
        ignored - and this table coded match quality green/amber/red long
@@ -788,17 +789,17 @@ def stylesheet(mode):
        painted {card} (the card colour), without it, the model's own colour. */
 
     QHeaderView {{ background: transparent; border: none; }}
+    /* Mono caps, left-aligned, a single underline (Q-03). QSS has no caps
+       or tracking: those come from the model's FontRole for the header
+       (ImageTableModel.headerData), which Qt merges over this font. */
     QHeaderView::section {{
-            background: {card_alt};
+            background: {card};
             color: {ink_65};
             border: none;
-            border-right: 1px solid {ink_46};
-            padding: 7px 8px;
-            font-size: 12px;
+            border-bottom: 1px solid {ink_28};
+            padding: 7px 12px;
     }}
     QHeaderView::section:hover {{ color: {ink_100}; }}
-    QHeaderView::section:last {{ border-right: none; }}
-    QTableCornerButton::section {{ background: {card_alt}; border: none; }}
 
     /* ---- the tag list, and every other plain list ---- */
     QListWidget, QListView, QTreeView {{
