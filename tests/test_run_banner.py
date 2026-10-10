@@ -63,12 +63,15 @@ class TestRunBanner(unittest.TestCase):
         entry = ImageEntry(path="/tmp/dan660-crashed.png")
         win = self._make_window(unclean_shutdown=True, had_session_file=True, entries=[entry])
         self.assertTrue(win.run_banner.isVisibleTo(win.run_banner.parentWidget()))
-        self.assertEqual(win._run_banner_body.text(), "0 sent, 0 still queued, 1 not yet searched")
+        self.assertIn("0 of 1 image is already sent to Hydrus", win._run_banner_body.text())
+        self.assertIn("1 was never reached", win._run_banner_body.text())
 
     def test_body_counts_per_category(self):
         """Reads the same per-row status the table already tracks - no
         new counting logic, matching _refresh_sent_count_label's own
-        sent/queued split plus action_start_search's unsearched count."""
+        sent/queued split plus action_start_search's unsearched count.
+        (The one-line "N sent, N still queued, N not yet searched" became
+        S-01's prose; the same four counts are asserted in it.)"""
         entries = [
             ImageEntry(path="/tmp/dan660-1.png", status=MatchStatus.NOT_SEARCHED),
             ImageEntry(path="/tmp/dan660-2.png", status=MatchStatus.NOT_SEARCHED),
@@ -78,7 +81,10 @@ class TestRunBanner(unittest.TestCase):
                        sent_to_hydrus=True, hydrus_import_confirmed=False),
         ]
         win = self._make_window(unclean_shutdown=True, had_session_file=True, entries=entries)
-        self.assertEqual(win._run_banner_body.text(), "1 sent, 1 still queued, 2 not yet searched")
+        text = win._run_banner_body.text()
+        self.assertIn("1 of 4 images are already sent to Hydrus", text)
+        self.assertIn("1 is still queued with Hydrus", text)
+        self.assertIn("2 were never reached", text)
 
     def test_resume_button_routes_to_action_start_search(self):
         """The button's clicked signal is wired at _build_queue_page time,
