@@ -69,7 +69,7 @@ from gui.add_tags_dialog import AddTagsDialog
 # with the model, but the sort keys here (and the GUI tests) still import
 # them from this module.
 from gui.image_table_model import (  # noqa: F401
-    COLUMNS, COL_SENT, COL_SIMILARITY, COL_STATUS, ImageTableModel, header_layout_is_usable,
+    COLUMNS, COL_ENGINE, COL_SENT, COL_SIMILARITY, COL_STATUS, ImageTableModel, header_layout_is_usable,
     sort_key_for_column, _entry_cache_label, _entry_engine_label,
     _entry_sent_label, _entry_size_delta_label, _size_delta_weight,
 )
@@ -131,6 +131,7 @@ THUMB_ICON_CACHE_ENTRIES = 4000      # ~36 MB worst case
 # "the headers are missing" rather than as a layout problem.
 MIN_COLUMN_WIDTH = 24
 DEFAULT_COLUMN_WIDTH = 90
+ENGINE_COLUMN_WIDTH = 120
 
 THUMB_VIEWPORT_BUFFER_ROWS = 15
 # Scroll events fire continuously; coalesce a burst into one pass.
@@ -825,6 +826,12 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         # default section width "Unsearched" elides to "Unsearc…",
         # which is the first thing a new list is full of.
         self.table.setColumnWidth(COL_STATUS, 130)
+        # And for "— interrupted mid-search" (S-02), the longest thing this
+        # column ever says: at the default width it wraps to three lines in
+        # a one-line row, at this one to two ("— interrupted" / "mid-search":
+        # a little wider and it breaks at the hyphen instead). Any wider and
+        # the last column leaves a 1440px window.
+        self.table.setColumnWidth(COL_ENGINE, ENGINE_COLUMN_WIDTH)
         self.table.setIconSize(QSize(THUMB_COLUMN_SIZE, THUMB_COLUMN_SIZE))
         self.table.verticalHeader().setDefaultSectionSize(THUMB_COLUMN_SIZE + 8)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)

@@ -96,6 +96,33 @@ def section_header(text, *trailing):
     return row
 
 
+class WrappingLabel(QLabel):
+    """A word-wrapped label that asks for the height its text needs at the
+    width it was actually given.
+
+    A plain wrapped QLabel inside a frame reports the height of its text
+    UNWRAPPED, so a paragraph that wraps draws over (or under) whatever
+    sits below it - the frame's own layout never learns the width. Here
+    the minimum height follows the width, and the layout is re-asked.
+    """
+
+    def __init__(self, text=''):
+        super().__init__(text)
+        self.setWordWrap(True)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        needed = self.heightForWidth(self.width())
+        if needed > 0 and needed != self.minimumHeight():
+            self.setMinimumHeight(needed)
+
+    def setText(self, text):
+        super().setText(text)
+        needed = self.heightForWidth(self.width())
+        if needed > 0:
+            self.setMinimumHeight(needed)
+
+
 def run_banner():
     """The interrupted-run notice (DAN-660, S-01): a bracketed frame with a
     status glyph, a kicker, reassuring prose, a meta line, and three actions
@@ -127,9 +154,8 @@ def run_banner():
     head.setObjectName('RunBannerHead')
     uppercase_voice(head)
     text_col.addWidget(head)
-    body = QLabel()
+    body = WrappingLabel()
     body.setObjectName('RunBannerBody')
-    body.setWordWrap(True)
     body.setMaximumWidth(RUN_BANNER_PROSE_WIDTH)
     text_col.addWidget(body)
     meta_slot = QVBoxLayout()

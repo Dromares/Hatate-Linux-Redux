@@ -192,6 +192,24 @@ class TestProse(_InterruptedWindow):
                 # The row that was mid-search is unreached too: 3, not 2.
                 self.assertIn("and 3 were never reached.", text)
 
+    def test_the_wrapped_prose_is_not_clipped(self):
+        """A wrapped label inside a frame used to be given one line's height
+        and drew over the meta line; every line of it must be visible, in
+        a window narrow enough to force a third line too."""
+        for mode in MODES:
+            for width in (1440, 700):
+                with self.subTest(mode=mode, width=width):
+                    win = self._window(mode)
+                    win.resize(width, 900)
+                    for _ in range(3):
+                        QApplication.processEvents()
+                    body = self._label(win, "RunBannerBody")
+                    self.assertGreaterEqual(body.height(), body.heightForWidth(body.width()))
+                    meta = win.run_banner.findChild(widgets.QWidget, "MetaLine")
+                    body_bottom = body.mapTo(win.run_banner, body.rect().bottomLeft()).y()
+                    meta_top = meta.mapTo(win.run_banner, meta.rect().topLeft()).y()
+                    self.assertLessEqual(body_bottom, meta_top)
+
     def test_counts_by_category(self):
         from gui.main_window import _interrupted_prose
         entries = [
@@ -351,6 +369,31 @@ class TestRowMarker(_InterruptedWindow):
                 got = (colour.red(), colour.green(), colour.blue())
                 card = _parse_hex(theme.palette(mode)["card"])
                 self.assertGreaterEqual(_contrast_ratio(got, card), 4.5)
+
+    def test_the_marker_breaks_at_the_space_and_fits_the_row_in_the_default_column(self):
+        """The default Engine column is wide enough that the marker wraps to
+        two lines at its space ("— interrupted" / "mid-search") rather than
+        at its hyphen or into three, and two lines fit the row."""
+        from PyQt6.QtCore import QRect
+        from PyQt6.QtGui import QFontMetrics
+        from gui import main_window as mw
+        for mode in MODES:
+            with self.subTest(mode=mode):
+                win = self._window(mode)
+                # The constant, not the live column: a saved header layout
+                # on the machine running the tests would otherwise decide it.
+                self.assertEqual(mw.ENGINE_COLUMN_WIDTH, 120)
+                cell = dict(self._engine_cells(win))["p12a-3.png"]
+                font = win.table.font()
+                font.setItalic(True)
+                metrics = QFontMetrics(font)
+                inner = mw.ENGINE_COLUMN_WIDTH - 16     # the view's cell margins
+                lines = metrics.boundingRect(
+                    QRect(0, 0, inner, 1000), int(Qt.TextFlag.TextWordWrap),
+                    cell.data(Qt.ItemDataRole.DisplayRole))
+                self.assertLessEqual(lines.height(), 2 * metrics.lineSpacing() + 1)
+                self.assertLessEqual(lines.height(), win.table.verticalHeader().defaultSectionSize())
+                self.assertGreater(metrics.horizontalAdvance("\u2014 interrupted mid-"), inner)
 
     def test_it_goes_once_the_row_has_a_result_or_is_searched_again(self):
         win = self._window("dark")
