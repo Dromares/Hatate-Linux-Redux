@@ -300,7 +300,7 @@ def _over(fg, bg):
     """'#rrggbb' of an alpha QColor composited on an opaque '#rrggbb'."""
     a = fg.alphaF()
     base = [int(bg[i:i + 2], 16) for i in (1, 3, 5)]
-    mix = [round(c * a + b * (1 - a)) for c, b in zip((fg.red(), fg.green(), fg.blue()), base)]
+    mix = [round(c * a + b * (1 - a)) for c, b in zip((fg.red(), fg.green(), fg.blue()), base, strict=True)]
     return "#%02x%02x%02x" % tuple(mix)
 
 
