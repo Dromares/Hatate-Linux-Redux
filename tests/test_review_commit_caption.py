@@ -63,7 +63,7 @@ class TestSendCaption(unittest.TestCase):
         win = self._review("dark")
         send = self._send_button(win)
         self.assertEqual(send.objectName(), "Primary")
-        self.assertIn("(Return)", send.text())
+        self.assertEqual(send.key(), "Return")
 
     def _check_contrast(self, mode):
         win = self._review(mode)

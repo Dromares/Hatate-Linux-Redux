@@ -104,6 +104,10 @@ class ReviewViewMixin:
         self.review_splitter = splitter
         outer.addWidget(splitter, 1)
 
+        rule = QFrame()
+        rule.setObjectName("FooterRule")    # the mockup's 1px top rule over the footer
+        rule.setFixedHeight(1)
+        outer.addWidget(rule)
         outer.addWidget(self._build_position_strip())
         return page
 
@@ -329,8 +333,13 @@ class ReviewViewMixin:
         self.review_next_match_btn = widgets.icon_button(
             "▶", "Next match candidate (])",
             lambda: self._step_review_candidate(+1), boxed=True)
+        # Each stepper is followed by its key, as the mockup's `.kbd-pair`.
+        self.review_prev_match_key = widgets.KeyCap(self._key_for("prev_candidate"))
+        self.review_next_match_key = widgets.KeyCap(self._key_for("next_candidate"))
         nav.addWidget(self.review_prev_match_btn)
+        nav.addWidget(self.review_prev_match_key)
         nav.addWidget(self.review_next_match_btn)
+        nav.addWidget(self.review_next_match_key)
         layout.addWidget(self.review_match_nav)
 
         self.candidate_combo = widgets.CandidatePicker()
@@ -370,8 +379,9 @@ class ReviewViewMixin:
 
         # Each of these calls exactly what the right-click entry and the
         # key of the same name call - confirmation prompts included.
-        send = widgets.pill_button(
-            self._shortcut_label("Send to Hydrus", "send_upload"), self.action_send_to_hydrus, primary=True)
+        send = widgets.keyed_button(
+            "Send to Hydrus", self._key_for("send_upload"), self.action_send_to_hydrus, primary=True)
+        self.review_send_btn = send
         send.setToolTip("Send the file, its URL and its tags to Hydrus.")
         layout.addWidget(send)
 
@@ -388,18 +398,20 @@ class ReviewViewMixin:
         grid = QGridLayout()
         grid.setSpacing(8)
 
-        url_btn = widgets.pill_button(self._shortcut_label("Send URL", "send_url"), self.action_import_url_to_hydrus)
+        url_btn = widgets.keyed_button("Send URL", self._key_for("send_url"), self.action_import_url_to_hydrus)
+        self.review_url_btn = url_btn
         url_btn.setToolTip("Hand the URL to Hydrus's own downloader.")
         grid.addWidget(url_btn, 0, 0)
 
-        download_btn = widgets.pill_button(
-            self._shortcut_label("Download", "download_send"), self.action_download_and_send_to_hydrus)
+        download_btn = widgets.keyed_button(
+            "Download", self._key_for("download_send"), self.action_download_and_send_to_hydrus)
+        self.review_download_btn = download_btn
         download_btn.setToolTip(
             "Download the full-resolution match and send that to Hydrus with the tags.")
         grid.addWidget(download_btn, 0, 1)
 
-        self.review_mark_btn = widgets.pill_button(
-            self._shortcut_label("Mark reviewed", "toggle_reviewed"), self._toggle_reviewed_from_review)
+        self.review_mark_btn = widgets.keyed_button(
+            "Mark reviewed", self._key_for("toggle_reviewed"), self._toggle_reviewed_from_review)
         self.review_mark_btn.setToolTip(
             "Records that you looked at this one and decided against sending it.\n\n"
             "Separate from Sent because both are decisions, and a row with neither "
@@ -408,7 +420,8 @@ class ReviewViewMixin:
         )
         grid.addWidget(self.review_mark_btn, 1, 0)
 
-        open_btn = widgets.pill_button(self._shortcut_label("Open match", "open_match"), self.action_open_matched_url)
+        open_btn = widgets.keyed_button("Open match", self._key_for("open_match"), self.action_open_matched_url)
+        self.review_open_btn = open_btn
         open_btn.setToolTip("Open the matched page in your browser.")
         grid.addWidget(open_btn, 1, 1)
 
@@ -421,8 +434,17 @@ class ReviewViewMixin:
         # stylesheet) rather than hardcoding a number means a future font
         # swap or a longer shortcut label can't silently reopen this: the
         # card simply refuses to be squeezed narrower than its buttons need.
+        #
+        # The mark button's label flips to "Unmark reviewed" once the row is
+        # reviewed, and that is the wider of the two, so the floor is
+        # measured with it showing - sized for "Mark reviewed" alone, the
+        # card clips the longer label (and now its keycap) the moment the
+        # first reviewed row is selected.
+        shown_label = self.review_mark_btn.text()
+        self.review_mark_btn.setText("Unmark reviewed")
         margins = layout.contentsMargins()
         grid_min_width = grid.minimumSize().width() + margins.left() + margins.right()
+        self.review_mark_btn.setText(shown_label)
         if grid_min_width > card.minimumWidth():
             card.setMinimumWidth(grid_min_width)
 
@@ -439,23 +461,23 @@ class ReviewViewMixin:
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
 
-        self.review_prev_btn = widgets.pill_button(
-            self._shortcut_label("◂ Previous", "prev_row"), lambda: self._run_review_action("prev_row"))
+        self.review_prev_btn = widgets.keyed_button(
+            "◂ Previous", self._key_for("prev_row"), lambda: self._run_review_action("prev_row"))
         self.review_prev_btn.setToolTip("Previous image.")
         row.addWidget(self.review_prev_btn)
 
-        self.review_position_label = widgets.muted("")
-        self.review_position_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        row.addWidget(self.review_position_label, 1)
+        self.review_hint_bar = widgets.KeyHintBar()
+        row.addWidget(self.review_hint_bar, 1)
 
-        self.review_next_unreviewed_btn = widgets.pill_button(
-            self._shortcut_label("Next unreviewed", "next_unreviewed"), lambda: self._run_review_action("next_unreviewed"))
+        self.review_next_unreviewed_btn = widgets.keyed_button(
+            "Next unreviewed", self._key_for("next_unreviewed"),
+            lambda: self._run_review_action("next_unreviewed"))
         self.review_next_unreviewed_btn.setToolTip(
             "Skip ahead to the next image you haven't sent or marked reviewed.")
         row.addWidget(self.review_next_unreviewed_btn)
 
-        self.review_next_btn = widgets.pill_button(
-            self._shortcut_label("Next ▸", "next_row"), lambda: self._run_review_action("next_row"))
+        self.review_next_btn = widgets.keyed_button(
+            "Next ▸", self._key_for("next_row"), lambda: self._run_review_action("next_row"))
         self.review_next_btn.setToolTip("Next image.")
         row.addWidget(self.review_next_btn)
         return strip
@@ -469,41 +491,41 @@ class ReviewViewMixin:
         """Returns the effective key binding for each review action."""
         return resolve(getattr(self.settings, "review_shortcuts", None))
 
-    def _shortcut_label(self, base: str, action_id: str) -> str:
-        """Returns the button label with the effective key binding appended."""
-        bindings = self._resolved_shortcuts()
-        key = bindings.get(action_id, "")
-        if key:
-            return f"{base} ({key})"
-        return base
+    def _key_for(self, action_id: str) -> str:
+        """The effective key for an action, as the keycap should show it ("" if unbound)."""
+        return self._resolved_shortcuts().get(action_id, "")
 
-    def _position_strip_hint(self) -> str:
-        """Builds the dynamic hint string from resolved bindings.
+    def _hint_bar_groups(self, position: str, left: int) -> list:
+        """The footer's hint bar, as groups for widgets.KeyHintBar.
 
-        Terser than a literal per-action label (e.g. "j/k move" rather than
-        "k previous image  ·  j next image"), matching the README's own
-        description of the review keyboard.
+        Built from the resolved bindings, so a key the user rebound (or
+        unbound) is what the bar shows. Terser than a per-action label
+        ("J/K move" rather than "K previous image / J next image"),
+        matching the README's own description of the review keyboard.
         """
         bindings = self._resolved_shortcuts()
-        parts = []
+        groups: list = []
+        if position:
+            groups.append([("strong", position)])
+        if left:
+            groups.append([("strong", str(left)), ("text", "still to review")])
 
         move_keys = [k for k in (bindings.get("next_row", ""), bindings.get("prev_row", "")) if k]
         if move_keys:
-            parts.append(f"{'/'.join(move_keys)} move")
+            pieces: list = []
+            for n, key in enumerate(move_keys):
+                if n:
+                    pieces.append(("text", "/"))
+                pieces.append(("key", key))
+            groups.append(pieces + [("text", "move")])
 
-        next_unreviewed_key = bindings.get("next_unreviewed", "")
-        if next_unreviewed_key:
-            parts.append(f"{next_unreviewed_key} next unreviewed")
-
-        toggle_key = bindings.get("toggle_reviewed", "")
-        if toggle_key:
-            parts.append(f"{toggle_key} marks")
-
-        compare_key = bindings.get("compare", "")
-        if compare_key:
-            parts.append(f"{compare_key} compares")
-
-        return "  ·  ".join(parts)
+        for action_id, words in (("next_unreviewed", "next unreviewed"),
+                                 ("toggle_reviewed", "marks"),
+                                 ("compare", "compares")):
+            key = bindings.get(action_id, "")
+            if key:
+                groups.append([("key", key), ("text", words)])
+        return groups
 
     def _show_shortcuts_dialog(self):
         """Shows a dialog with all review keyboard shortcuts and their current bindings."""
@@ -731,6 +753,8 @@ class ReviewViewMixin:
         has_candidates = entry is not None and count > 0
         self.review_prev_match_btn.setEnabled(has_candidates and index > 0)
         self.review_next_match_btn.setEnabled(has_candidates and index < count - 1)
+        self.review_prev_match_key.setEnabled(self.review_prev_match_btn.isEnabled())
+        self.review_next_match_key.setEnabled(self.review_next_match_btn.isEnabled())
 
         if entry is not None:
             self.review_mark_btn.setText(
@@ -739,7 +763,7 @@ class ReviewViewMixin:
 
     def _refresh_review_strip(self):
         """The line along the bottom: where you are, and how much is left."""
-        if not hasattr(self, "review_position_label"):
+        if not hasattr(self, "review_hint_bar"):
             return
         total = self.table_model.visible_count()
         entry = self._current_entry()
@@ -751,11 +775,23 @@ class ReviewViewMixin:
                 position = f"{row + 1} of {total}"
         self.review_prev_btn.setEnabled(total > 0 and row != 0)
         self.review_next_btn.setEnabled(total > 0 and (row is None or row < total - 1))
-        self.review_prev_btn.setText(self._shortcut_label("◂ Previous", "prev_row"))
-        self.review_next_btn.setText(self._shortcut_label("Next ▸", "next_row"))
-        self.review_next_unreviewed_btn.setText(
-            self._shortcut_label("Next unreviewed", "next_unreviewed"))
+        self._refresh_review_keycaps()
         left = sum(1 for e in self.entries if e.needs_review)
-        parts = [p for p in (position, f"{left} still to review" if left else "") if p]
-        parts.append(self._position_strip_hint())
-        self.review_position_label.setText("  ·  ".join(parts))
+        self.review_hint_bar.set_groups(self._hint_bar_groups(position, left))
+
+    def _refresh_review_keycaps(self):
+        """Points every keycap at the binding it advertises, so a key edited
+        in Settings -> Shortcuts is what the buttons show next refresh."""
+        for button, action_id in (
+                (self.review_send_btn, "send_upload"),
+                (self.review_url_btn, "send_url"),
+                (self.review_download_btn, "download_send"),
+                (self.review_mark_btn, "toggle_reviewed"),
+                (self.review_open_btn, "open_match"),
+                (self.review_prev_btn, "prev_row"),
+                (self.review_next_unreviewed_btn, "next_unreviewed"),
+                (self.review_next_btn, "next_row")):
+            button.set_key(self._key_for(action_id))
+        self.review_prev_match_key.setText(self._key_for("prev_candidate"))
+        self.review_next_match_key.setText(self._key_for("next_candidate"))
+

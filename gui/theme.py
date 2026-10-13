@@ -563,6 +563,60 @@ def stylesheet(mode):
     }}
     QLabel {{ background: transparent; }}
 
+    /* Keycaps (widgets.KeyCap) - the mockup's `.kbd`: a hairline box round a
+       mono-bold key name, drawn on the ink tier that reads on the surface
+       it sits on. Disabled ones take the mockup's `.kbd--disabled`. */
+    QLabel#KeyCap {{
+            font-family: {font_mono};
+            font-size: 10px;
+            font-weight: 700;
+            color: {ink_100};
+            background: transparent;
+            border: 1px solid {ink_46};
+            padding: 0px 5px;
+    }}
+    QLabel#KeyCap:disabled {{
+            font-weight: 400;
+            color: {ink_45};
+            border-color: {ink_18};
+    }}
+    /* On the ink-stamp fill the cap takes the button's own text colour: the
+       fill is solid ink, so an ink-toned box would be invisible on it. A
+       property, not a `QPushButton#Primary QLabel#KeyCap` descendant rule -
+       Qt does not re-match a child's rules when only its parent is named. */
+    QLabel#KeyCap[onStamp="true"] {{
+            color: {stamp_fg};
+            background: {stamp_bg};
+            border-color: {stamp_fg};
+    }}
+    QLabel#KeyCap[onStamp="true"]:disabled {{
+            color: {ink_45};
+            border-color: {ink_45};
+    }}
+    /* A keyed button (widgets.KeyedButton) keeps its label at the left and
+       its cap at the right; the room for the cap is the button's own padding. */
+    QPushButton[keyed="true"] {{ text-align: left; }}
+    /* The 1px rule over Review's footer. Its own name, not SectionRule: the
+       Activity tests count SectionRules by name, and this is not one. */
+    QFrame#FooterRule {{
+            background: {ink_18};
+            border: none;
+            max-height: 1px;
+            min-height: 1px;
+    }}
+    /* The Review hint bar (widgets.KeyHintBar): the mockup's `.bottom-strip`. */
+    QLabel#HintBarText {{
+            font-family: {font_mono};
+            font-size: 11px;
+            color: {ink_65};
+            background: transparent;
+    }}
+    QLabel#HintBarText[strong="true"] {{
+            font-family: {font_mono};
+            color: {ink_100};
+            font-weight: 700;
+    }}
+
     /* ---- a setting the search has just jumped to. Bright enough to
        find with the eye after a tab switch, and temporary - see
        gui/settings_search.py. ---- */

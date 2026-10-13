@@ -15,7 +15,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QButtonGroup, QComboBox, QFrame, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QStyle, QStyleOptionComboBox, QStylePainter,
+    QLabel, QLineEdit, QPushButton, QSizePolicy, QStyle, QStyleOptionComboBox, QStylePainter,
     QVBoxLayout, QWidget,
 )
 
@@ -512,6 +512,219 @@ def pill_button(text, on_click=None, primary=False, uppercase=True):
     if on_click is not None:
         button.clicked.connect(on_click)
     return button
+
+
+class KeyCap(QLabel):
+    """A key name in a hairline box - the mockup's `.kbd`.
+
+    Qt's rich text cannot draw a bordered inline span, so a keycap inside a
+    sentence or a button label has to be a widget of its own. The box and
+    the type are the stylesheet's (`QLabel#KeyCap`); the capitals are the
+    font's, so `text()` stays the key as the registry spells it
+    ("Return", "Space") and anything that reads the widget sees that.
+    """
+
+    def __init__(self, label, parent=None):
+        super().__init__(label, parent)
+        self.setObjectName('KeyCap')
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Its own size, not the row's: a keycap stretched to the height of the
+        # button or bar it sits in stops reading as a key.
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        font = self.font()
+        font.setCapitalization(QFont.Capitalization.AllUppercase)
+        self.setFont(font)
+
+
+KEYED_BUTTON_EDGE = 12   # a keycap's distance from the button's right edge
+KEYED_BUTTON_GAP = 10    # ... and the room kept between it and the label
+
+
+class KeyedButton(QPushButton):
+    """A button that carries its key as a keycap: `SEND URL  [U]`.
+
+    The label stays the button's own `text()` - so the accessible name, the
+    tooltip logic and every `setText` caller are unchanged - and the cap is
+    a child widget laid over the right-hand end. The room it needs is added
+    as right padding, so the button's size hint (and the decision card's
+    minimum width, which is derived from it) accounts for the keycap rather
+    than letting it sit on top of the label.
+    """
+
+    def __init__(self, text, key='', primary=False, parent=None):
+        super().__init__(text, parent)
+        if primary:
+            self.setObjectName('Primary')
+        self.setProperty('keyed', True)
+        self._cap = KeyCap(key, self)
+        if primary:
+            self._cap.setProperty('onStamp', True)    # ink-on-ink would vanish; see theme.py
+        self._padding = None
+        self.set_key(key)
+
+    @property
+    def keycap(self):
+        return self._cap
+
+    def key(self):
+        return self._cap.text()
+
+    def set_key(self, key):
+        """Shows `key` in the cap; an empty key (the user unbound it) hides it."""
+        self._cap.setText(key)
+        self._cap.setVisible(bool(key))
+        self.refit()
+
+    def refit(self):
+        """Re-measures the cap and reserves its room. Called again once the
+        button's own font is final: the cap's width is the font's."""
+        self._cap.ensurePolished()
+        cap = self._cap.sizeHint()
+        reserve = (KEYED_BUTTON_EDGE + cap.width() + KEYED_BUTTON_GAP
+                   if self._cap.text() else KEYED_BUTTON_EDGE)
+        if reserve != self._padding:
+            self._padding = reserve
+            self.setStyleSheet(
+                f'QPushButton[keyed="true"] {{ padding-right: {reserve}px; }}')
+        self._cap.resize(cap)
+        self._place()
+
+    def _place(self):
+        cap = self._cap
+        cap.move(self.width() - KEYED_BUTTON_EDGE - cap.width(),
+                 (self.height() - cap.height()) // 2)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.refit()    # the registered font is live by now
+
+
+def keyed_button(text, key='', on_click=None, primary=False):
+    """`pill_button` with a keycap: the page-level buttons that have a key."""
+    button = KeyedButton(text, key, primary=primary)
+    button.setCursor(Qt.CursorShape.PointingHandCursor)
+    button.setProperty('voice', 'caps')
+    button.setMinimumHeight(BUTTON_MIN_HEIGHT)
+    uppercase_voice(button)
+    if on_click is not None:
+        button.clicked.connect(on_click)
+    return button
+
+
+HINT_BAR_GAP = 6          # between the pieces of one hint
+HINT_BAR_SEPARATOR_GAP = 8
+
+
+class KeyHintBar(QWidget):
+    """The line of keys along the bottom of Review: `1 OF 8 · [J]/[K] MOVE`.
+
+    Built from groups so it can lose its tail, not its head: a group is a
+    list of `(kind, text)` pieces, `kind` being `text`, `strong` (the
+    figures) or `key` (a KeyCap). Groups are joined with a middle dot. When
+    the bar is narrower than they need, the last groups are hidden until the
+    rest fit - the position and the count are the first group and always
+    stay, where a plain label would have forced the window wider.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName('KeyHintBar')
+        self._groups = []
+        self._parts = []      # [(separator widget or None, group widget)]
+        self._row = QHBoxLayout(self)
+        self._row.setContentsMargins(0, 0, 0, 0)
+        self._row.setSpacing(0)
+        self._row.addStretch(1)
+        self._row.addStretch(1)
+
+    def set_groups(self, groups):
+        groups = [list(g) for g in groups if g]
+        if groups == self._groups:
+            return
+        self._groups = groups
+        for separator, group in self._parts:
+            for widget in (separator, group):
+                if widget is not None:
+                    self._row.removeWidget(widget)
+                    widget.setParent(None)
+                    widget.deleteLater()
+        self._parts = []
+        at = 1
+        for index, pieces in enumerate(groups):
+            separator = None
+            if index:
+                separator = self._text_label('·')
+                separator.setContentsMargins(HINT_BAR_SEPARATOR_GAP, 0, HINT_BAR_SEPARATOR_GAP, 0)
+                self._row.insertWidget(at, separator)
+                at += 1
+            group = QWidget()
+            inner = QHBoxLayout(group)
+            inner.setContentsMargins(0, 0, 0, 0)
+            inner.setSpacing(HINT_BAR_GAP)
+            for kind, text in pieces:
+                if kind == 'key':
+                    inner.addWidget(KeyCap(text))
+                else:
+                    inner.addWidget(self._text_label(text, strong=(kind == 'strong')))
+            self._row.insertWidget(at, group)
+            at += 1
+            self._parts.append((separator, group))
+        self.setAccessibleName(self.plain_text())
+        self._fit()
+
+    @staticmethod
+    def _text_label(text, strong=False):
+        label = QLabel(text)
+        label.setObjectName('HintBarText')
+        label.setProperty('strong', strong)
+        uppercase_voice(label, 0.08)
+        return label
+
+    def plain_text(self):
+        """The bar as a sentence, keys by their names - what a reader hears."""
+        return ' · '.join(
+            ' '.join(text for _, text in pieces) for pieces in self._groups)
+
+    def visible_group_count(self):
+        return sum(1 for _, group in self._parts if not group.isHidden())
+
+    def minimumSizeHint(self):
+        return QSize(0, super().minimumSizeHint().height())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._fit()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._fit()
+
+    def _fit(self):
+        for separator, group in self._parts:
+            if separator is not None:
+                separator.setVisible(True)
+            group.setVisible(True)
+        available = self.width()
+        if available <= 0:
+            return
+        used = 0
+        keep = 0
+        for index, (separator, group) in enumerate(self._parts):
+            used += group.sizeHint().width()
+            if separator is not None:
+                used += separator.sizeHint().width()
+            if used > available and index:
+                break
+            keep = index + 1
+        for index, (separator, group) in enumerate(self._parts):
+            if index >= keep:
+                group.setVisible(False)
+                if separator is not None:
+                    separator.setVisible(False)
 
 
 def link_button(text, on_click=None):
