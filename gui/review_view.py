@@ -337,7 +337,8 @@ class ReviewViewMixin:
         )
         self.review_wipe.zoom_changed.connect(
             lambda percent: self.review_zoom_label.setText(f"{percent:.0f}%"))
-        layout.addWidget(self.review_wipe, 1)
+        self.review_wipe_frame = widgets.image_frame(self.review_wipe)
+        layout.addWidget(self.review_wipe_frame, 1)
 
         self.review_zoom_tools = self._build_zoom_tools()
         self.review_zoom_widgets = [self.review_zoom_tools]

@@ -1219,6 +1219,15 @@ _SWEEP_EXEMPTIONS = [
                   "the line) - same call as QGroupBox.",
     },
     {
+        "kind": "border", "selectors": frozenset({"QFrame#ImageFrame"}),
+        "fg_token": "ink_18", "bg_prefix": "card",
+        "reason": "DAN-1174 / V-03: the dossier frame round a Review picture "
+                  "(mockup `.frame`: 1px ink-18). A passive viewing-area "
+                  "outline, the same call as QFrame#Card and QTableView - it is "
+                  "not a hit target, and the four corner brackets laid over it "
+                  "(widgets.Brackets, ink_65) are what mark the edge.",
+    },
+    {
         "kind": "border", "selectors": frozenset({"QTableView"}),
         "fg_token": "ink_18", "bg_prefix": "card",
         "reason": "DAN-1160 / G-08: the hairline that outlines the Queue table region "
