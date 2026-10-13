@@ -86,6 +86,7 @@ class _Renderer:
             raise RuntimeError(f"config dir {paths.CONFIG_DIR} escaped the sandbox {work}")
         register_fonts()
         self.config_dir = Path(paths.CONFIG_DIR)
+        self.modals: List[str] = []
         self.images = work / "images"
         self.images.mkdir(parents=True, exist_ok=True)
 
@@ -246,10 +247,42 @@ class _Renderer:
         return self._finish(win, "queue", mode)
 
     def queue_interrupted_paused(self, mode: str) -> Path:
+        """P12b, through the real persisted path (DAN-1359): the saved quota
+        pause is read back by `_show_persisted_quota_pause`, which raises the
+        banner, the strip note and `ETA paused`. Setting the status text
+        alone, as this used to, rendered none of them. QMessageBox/QDialog
+        `exec` are recorded in `self.modals`, not run, so a modal shows up as
+        a failed assertion instead of a hung render."""
+        import datetime
+        from unittest.mock import patch
+
+        from PyQt6.QtWidgets import QDialog, QMessageBox
+
+        from core.saucenao import QuotaPauseState
+        from gui import main_window as mw
+
+        reset = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=14, minutes=18)
+        state = QuotaPauseState(paused_at=time.time() - 3 * 3600, searched=200, remaining=3,
+                                reset_at=reset.isoformat())
+
+        class _Quota:
+            long_limit, long_remaining, short_limit, short_remaining = 200, 0, 6, 0
+
+        def record(name):
+            return lambda *_a, **_k: self.modals.append(name) or 0
+
         win = self._build(mode, self.entries())
-        win.status_label.setText(
-            "Paused: SauceNAO daily quota exhausted (200/day used) - 330 searched, 82 left unsearched")
+        win.progress_bar.setMaximum(8)
+        win.progress_bar.setValue(5)
+        win._run_active = False
         win.saucenao_quota_label.setText("SauceNAO 200/200 used today")
+        win._refresh_sent_count_label()
+        with patch.object(QMessageBox, "exec", record("QMessageBox.exec")), \
+                patch.object(QDialog, "exec", record("QDialog.exec")), \
+                patch.object(mw, "get_quota_pause_state", return_value=state), \
+                patch.object(mw, "get_last_quota", return_value=_Quota()):
+            win._show_persisted_quota_pause()
+            self._pump()
         return self._finish(win, "queue-interrupted-paused", mode)
 
     def queue_interrupted_crashed(self, mode: str) -> Path:
