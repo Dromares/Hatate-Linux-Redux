@@ -143,6 +143,7 @@ class TestFramesAndCaptions(_FrameCase):
         win = self._review_window()
         entry = win.entries[0]
         entry.candidates[0].similarity_measured = False
+        entry.candidates[0].engine = "ascii2d"  # ordinal; IQDB's score counts as measured (P5)
         entry.select_candidate(0)
         win._update_preview(entry)
         self.assertIn("ranking, not measured", win.matched_caption.text())
