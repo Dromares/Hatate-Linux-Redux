@@ -105,7 +105,7 @@ class ReviewViewMixin:
         outer.addWidget(splitter, 1)
 
         rule = QFrame()
-        rule.setObjectName("SectionRule")    # the mockup's 1px top rule over the footer
+        rule.setObjectName("FooterRule")    # the mockup's 1px top rule over the footer
         rule.setFixedHeight(1)
         outer.addWidget(rule)
         outer.addWidget(self._build_position_strip())

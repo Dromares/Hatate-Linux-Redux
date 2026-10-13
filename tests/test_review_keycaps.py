@@ -260,7 +260,7 @@ class TestHintBar(_ReviewCase):
     def test_the_bar_carries_the_mockups_1px_rule_across_the_page(self):
         win = self._review_window()
         rule = next(f for f in win.review_page.findChildren(QFrame)
-                    if f.objectName() == "SectionRule" and f.parentWidget() is win.review_page)
+                    if f.objectName() == "FooterRule" and f.parentWidget() is win.review_page)
         self.assertEqual(rule.height(), 1)
         self.assertEqual(rule.width(), win.review_page.width())
         strip = win.review_hint_bar.parentWidget()

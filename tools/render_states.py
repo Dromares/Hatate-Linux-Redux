@@ -43,7 +43,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence, cast
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 
@@ -78,7 +78,7 @@ class _Renderer:
 
         self.work = work
         self.out_dir = out_dir
-        self.app = QApplication.instance() or QApplication([])
+        self.app = cast(QApplication, QApplication.instance() or QApplication([]))
         from core import paths
         from gui.fonts import register_fonts
 

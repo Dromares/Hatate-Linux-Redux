@@ -572,7 +572,7 @@ def stylesheet(mode):
             font-weight: 700;
             color: {ink_100};
             background: transparent;
-            border: 1px solid {ink_28};
+            border: 1px solid {ink_46};
             padding: 0px 5px;
     }}
     QLabel#KeyCap:disabled {{
@@ -586,6 +586,7 @@ def stylesheet(mode):
        Qt does not re-match a child's rules when only its parent is named. */
     QLabel#KeyCap[onStamp="true"] {{
             color: {stamp_fg};
+            background: {stamp_bg};
             border-color: {stamp_fg};
     }}
     QLabel#KeyCap[onStamp="true"]:disabled {{
@@ -595,6 +596,14 @@ def stylesheet(mode):
     /* A keyed button (widgets.KeyedButton) keeps its label at the left and
        its cap at the right; the room for the cap is the button's own padding. */
     QPushButton[keyed="true"] {{ text-align: left; }}
+    /* The 1px rule over Review's footer. Its own name, not SectionRule: the
+       Activity tests count SectionRules by name, and this is not one. */
+    QFrame#FooterRule {{
+            background: {ink_18};
+            border: none;
+            max-height: 1px;
+            min-height: 1px;
+    }}
     /* The Review hint bar (widgets.KeyHintBar): the mockup's `.bottom-strip`. */
     QLabel#HintBarText {{
             font-family: {font_mono};
@@ -603,6 +612,7 @@ def stylesheet(mode):
             background: transparent;
     }}
     QLabel#HintBarText[strong="true"] {{
+            font-family: {font_mono};
             color: {ink_100};
             font-weight: 700;
     }}
