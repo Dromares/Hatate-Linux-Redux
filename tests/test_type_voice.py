@@ -253,10 +253,13 @@ class _ActivityChecks:
             with self.subTest(button=button.text()):
                 self.assertTrue(button.property("boxed"))
                 self.assertEqual((button.width(), button.height()), (36, 36))
+                # Sample beside the glyph, not through it: the centre pixel
+                # can land on a stroke of the border's own ink colour.
                 img = button.grab().toImage()
-                self.assertNotEqual(
-                    img.pixelColor(0, 18).rgb(), img.pixelColor(18, 18).rgb(),
-                    "no hairline box")
+                for y in (9, 18, 27):
+                    self.assertNotEqual(
+                        img.pixelColor(0, y).rgb(), img.pixelColor(4, y).rgb(),
+                        f"no hairline box at y={y}")
 
     def test_log_toolbar_sits_right_of_the_section_rule(self):
         self.win.set_mode("activity")
