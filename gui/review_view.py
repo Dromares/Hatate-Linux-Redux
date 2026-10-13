@@ -73,6 +73,12 @@ VIEWS = (
      "resolutions, so it says which AREAS differ, never which exact pixels."),
 )
 
+# The Wipe view's one-line how-to (mockup review-wipe.html `.review-note`).
+WIPE_HINT = (
+    "Local on the left, match on the right - drag the divider to sweep one "
+    "over the other. Scroll to zoom, drag to pan, double-click to fit."
+)
+
 
 class ReviewViewMixin:
     """The Review mode. A mixin, in MUR's manner - it assigns to `self`."""
@@ -161,12 +167,12 @@ class ReviewViewMixin:
         self.review_stack.addWidget(self._build_wipe_view())
         layout.addWidget(self.review_stack, 1)
 
-        self.wipe_slider = QSlider(Qt.Orientation.Horizontal)
-        self.wipe_slider.setRange(0, 100)
-        self.wipe_slider.setValue(50)
-        self.wipe_slider.valueChanged.connect(
-            lambda v: self.review_wipe.set_position(v / 100.0))
-        layout.addWidget(self.wipe_slider)
+        layout.addWidget(self._build_wipe_slider_row())
+        # Under the slider, as the mockup has it: the how-to in Wipe, the
+        # verdict in Differences, a load warning in either.
+        self.review_note = widgets.hint("")
+        self.review_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.review_note)
 
         self._show_comparison_controls(False)
         return card
@@ -240,13 +246,45 @@ class ReviewViewMixin:
                      "compression artefacts and resampling softness as they really are.",
              lambda: self.review_wipe.zoom_to_actual()),
         ):
-            row.addWidget(widgets.icon_button(glyph, tip, slot))
+            button = widgets.zoom_button(glyph, tip)
+            button.clicked.connect(slot)
+            row.addWidget(button)
         self.review_zoom_label = widgets.muted("")
+        self.review_zoom_label.setObjectName("ZoomPercent")
         self.review_zoom_label.setMinimumWidth(56)
         self.review_zoom_label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         row.addWidget(self.review_zoom_label)
         return tools
+
+    def _build_wipe_slider_row(self):
+        """`LOCAL ---|--- MATCH` under the frame (mockup `.wipe-slider`): a
+        hairline track, a stamp handle and a mono-caps name at each end. The
+        row is one widget so the Wipe/Differences views can show and hide it
+        together."""
+        row = QWidget()
+        row.setObjectName("WipeSliderRow")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+        self.wipe_slider = QSlider(Qt.Orientation.Horizontal)
+        self.wipe_slider.setObjectName("WipeSlider")
+        self.wipe_slider.setMinimumHeight(24)   # the handle's hit target, not just its look
+        self.wipe_slider.setRange(0, 100)
+        self.wipe_slider.setValue(50)
+        self.wipe_slider.valueChanged.connect(
+            lambda v: self.review_wipe.set_position(v / 100.0))
+        # Not widgets.section_label(): these are not numbered sections, and
+        # the numbering test counts every SectionLabel on the page.
+        left, right = QLabel("Local"), QLabel("Match")
+        for label in (left, right):
+            label.setObjectName("WipeEndLabel")
+            widgets.uppercase_voice(label)
+        layout.addWidget(left)
+        layout.addWidget(self.wipe_slider, 1)
+        layout.addWidget(right)
+        self.review_slider_row = row
+        return row
 
     def _build_pair_view(self):
         """Two equal frames with the picture filling each, and a mono
@@ -347,9 +385,6 @@ class ReviewViewMixin:
         overlay.addWidget(self.review_zoom_tools, 0,
                           Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
 
-        self.review_note = widgets.hint("")
-        self.review_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.review_note)
         return panel
 
     # -- the decision ---------------------------------------------------
@@ -629,8 +664,10 @@ class ReviewViewMixin:
     def _show_comparison_controls(self, shown):
         for widget in getattr(self, "review_zoom_widgets", ()):
             widget.setVisible(shown)
-        if hasattr(self, "wipe_slider"):
-            self.wipe_slider.setVisible(shown)
+        if hasattr(self, "review_slider_row"):
+            self.review_slider_row.setVisible(shown)
+        if hasattr(self, "review_note"):
+            self.review_note.setVisible(shown)
 
     def _current_review_key(self):
         entry = self._current_entry()
@@ -702,7 +739,8 @@ class ReviewViewMixin:
                 "Showing the downscaled preview - the full file was not available, "
                 "so this understates the quality difference."
             )
-        self.review_note.setText("  ".join(notes))
+        self._review_load_notes = "  ".join(notes)
+        self.review_note.setText(self._review_load_notes)
         self.review_view_buttons["diff"].setEnabled(
             loaded.local is not None and loaded.matched is not None)
         return True
@@ -722,6 +760,10 @@ class ReviewViewMixin:
             self._show_differences()
         else:
             self.review_wipe.clear_difference_view()
+            # A load warning outranks the how-to line: it is the one the
+            # user needs to read.
+            self.review_note.setText(
+                getattr(self, "_review_load_notes", "") or WIPE_HINT)
 
     def _show_differences(self):
         """Builds the difference overlay, reusing the dialog's own maths.
