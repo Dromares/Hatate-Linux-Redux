@@ -23,6 +23,9 @@ from gui import theme
 
 TRACKING_LABEL = 0.16  # transcribed from tokens.css's --tracking-label
 CHIP_TRACKING = 0.08   # activity.html `.engine-tag`'s letter-spacing
+BUTTON_HINT_TRACKING = 0.10   # tokens.css `.btn-hint`'s letter-spacing
+PIPELINE_TRACKING = 0.06      # `.pipeline-line`'s letter-spacing
+PIPELINE_LABEL_GAP = 4        # the space between "Pipeline:" and the names
 
 # The house measurements. MUR's, kept to the number so the two
 # applications measure the same.
@@ -832,12 +835,17 @@ def link_button(text, on_click=None):
     return button
 
 
-def icon_button(glyph, tooltip='', on_click=None, checkable=False, boxed=False):
+def icon_button(glyph, tooltip='', on_click=None, checkable=False, boxed=False,
+                glyph_px=None):
     """A borderless glyph button - the small ones that sit beside a heading.
 
     `boxed` draws it as the top bar's square hairline box, ICON_BOX px a
     side (the mockup's gear, G-04), for an icon that is a control in its
     own right rather than a mark beside a heading.
+
+    `glyph_px` overrides the theme's glyph size for one button. The fonts
+    that carry these symbols draw them at very different sizes for the same
+    point size (↻ big, ⧉ small), so a row of them is evened out by eye.
     """
     button = QPushButton(glyph)
     button.setObjectName('IconButton')
@@ -846,6 +854,8 @@ def icon_button(glyph, tooltip='', on_click=None, checkable=False, boxed=False):
     if boxed:
         button.setProperty('boxed', True)
         button.setFixedSize(ICON_BOX, ICON_BOX)
+    if glyph_px:
+        button.setStyleSheet(f'font-size: {glyph_px}px;')
     if tooltip:
         button.setToolTip(tooltip)
     if on_click is not None:

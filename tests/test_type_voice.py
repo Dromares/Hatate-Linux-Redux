@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QToolButton
 
 from core.config import Settings
 from gui import shell, theme, widgets
+from gui.activity_view import LOG_GLYPH_PX
 from gui.settings_dialog import SettingsDialog
 from tests.test_gui_harness import make_themed_window
 from tests.test_gui_smoke import GuiTestCase
@@ -255,6 +256,67 @@ class _ActivityChecks:
                 self.assertTrue(_is_caps_mono(chip), _font(chip).toString())
                 self.assertEqual(_font(chip).pixelSize(), 11)
         self.assertEqual(chips[0].text(), "IQDB · primary")
+
+    def test_engine_chips_are_33px_tall_with_an_8px_gap(self):  # DAN-1392 #1
+        self.win.set_mode("activity")
+        QApplication.processEvents()
+        row = self.win.engine_chip_row
+        chips = [row.itemAt(i).widget() for i in range(row.count())]
+        first, second = chips[0], chips[1]
+        # The mockup's `.engine-tag` is 33px (padding 8/12 + a 1px border).
+        self.assertAlmostEqual(first.height(), 33, delta=1)
+        self.assertEqual(row.spacing(), 8)
+        self.assertEqual(second.x() - (first.x() + first.width()), 8)
+
+    def test_pipeline_line_sits_below_the_chips_in_mono_with_bold_names(self):  # DAN-1392 #2
+        self.win.set_mode("activity")
+        QApplication.processEvents()
+        names = self.win.engine_pipeline
+        label = names.parentWidget().findChild(QLabel, "PipelineLine")
+        self.assertEqual(label.text(), "Pipeline:")
+        self.assertNotIn("Pipeline", names.text())
+        last_chip = self.win.engine_chip_row.itemAt(
+            self.win.engine_chip_row.count() - 1).widget()
+        self.assertGreater(
+            names.mapTo(names.window(), names.rect().topLeft()).y(),
+            last_chip.mapTo(last_chip.window(), last_chip.rect().bottomLeft()).y())
+        for part in (label, names):
+            self.assertEqual(_font(part).family(), "JetBrains Mono")
+            self.assertEqual(_font(part).pixelSize(), 11)
+        self.assertGreaterEqual(_font(names).weight(), QFont.Weight.Bold)
+        self.assertLess(_font(label).weight(), QFont.Weight.Bold)
+
+    def test_show_in_queue_is_a_labelled_boxed_36px_button(self):  # DAN-1392 #3
+        self.win.set_mode("activity")
+        QApplication.processEvents()
+        hint = self.win.findChild(QLabel, "ButtonHint")
+        self.assertEqual(hint.text(), "Show in Queue")
+        self.assertTrue(_is_caps_mono(hint))
+        self.assertEqual(_font(hint).pixelSize(), 10)
+        buttons = [b for b in self.win.findChildren(QPushButton, "IconButton")
+                   if b.toolTip() == "Switch to Queue and focus the list."
+                   and b.isVisible()]
+        self.assertEqual(len(buttons), 1)
+        button = buttons[0]
+        self.assertTrue(button.property("boxed"))
+        self.assertEqual((button.width(), button.height()), (36, 36))
+        # The label sits immediately left of the box, on the same line.
+        self.assertLess(hint.geometry().right(), button.geometry().left())
+        self.assertEqual(hint.parentWidget(), button.parentWidget())
+
+    def test_log_glyphs_are_sized_to_share_one_visual_size(self):  # DAN-1392 #4
+        self.win.set_mode("activity")
+        by_glyph = {self.win.log_follow_btn.text(): self.win.log_follow_btn}
+        for button in self.win.findChildren(QPushButton, "IconButton"):
+            if button.toolTip() in ("Copy the whole log.",
+                                    "Open the folder the log file is in."):
+                by_glyph[button.text()] = button
+        self.assertEqual(set(by_glyph), {"↻", "⧉", "⤢"})
+        for glyph, button in by_glyph.items():
+            with self.subTest(glyph=glyph):
+                self.assertEqual(_font(button).pixelSize(), LOG_GLYPH_PX[glyph])
+        # ↻ draws large and ⧉ small at the same size, so ⧉ gets the bigger one.
+        self.assertLess(LOG_GLYPH_PX["↻"], LOG_GLYPH_PX["⧉"])
 
     def test_chips_wrap_instead_of_widening_the_window(self):
         self.win.set_mode("activity")

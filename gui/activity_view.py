@@ -18,10 +18,10 @@ above, visible from every mode - putting a second copy here would be two
 places to keep in step and one of them wrong. What is here is what the
 strip has no room for.
 """
-from PyQt6.QtCore import QTimer, QUrl
+from PyQt6.QtCore import Qt, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
-    QApplication, QHBoxLayout, QPlainTextEdit, QVBoxLayout, QWidget,
+    QApplication, QHBoxLayout, QLabel, QPlainTextEdit, QVBoxLayout, QWidget,
 )
 
 from core import engines
@@ -33,6 +33,11 @@ from gui import widgets
 # stopped: re-reading a file every couple of seconds to paint a widget
 # nobody is looking at is a silly thing to do for hours.
 TAIL_INTERVAL_MS = 2000
+
+# The log toolbar's glyphs come from different fallback fonts and draw at
+# very different sizes for the same font size (DAN-1392 #4); these are the
+# sizes that put all three at ~11px of ink in the 36px box.
+LOG_GLYPH_PX = {"↻": 16, "⧉": 21, "⤢": 16}
 
 
 class ActivityViewMixin:
@@ -68,12 +73,23 @@ class ActivityViewMixin:
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(widgets.section_header("01 // Engines"))
 
-        self.engine_pipeline = widgets.hint("")
-        self.engine_pipeline.setWordWrap(True)
-        layout.addWidget(self.engine_pipeline)
-
         self.engine_chip_row = widgets.FlowLayout()
         layout.addLayout(self.engine_chip_row)
+
+        # Y-03 / DAN-1392: the line-up as a sentence *below* the chips, mono,
+        # the engine names bold - the mockup's `.pipeline-line`.
+        pipeline_row = QHBoxLayout()
+        pipeline_row.setSpacing(widgets.PIPELINE_LABEL_GAP)
+        pipeline_label = QLabel("Pipeline:")
+        pipeline_label.setObjectName("PipelineLine")
+        pipeline_row.addWidget(pipeline_label, 0, Qt.AlignmentFlag.AlignTop)
+        self.engine_pipeline = QLabel()
+        self.engine_pipeline.setObjectName("PipelineNames")
+        for label in (pipeline_label, self.engine_pipeline):
+            widgets.apply_tracking(label, widgets.PIPELINE_TRACKING)
+        self.engine_pipeline.setWordWrap(True)
+        pipeline_row.addWidget(self.engine_pipeline, 1)
+        layout.addLayout(pipeline_row)
 
         self.engine_summary = widgets.hint("")
         layout.addWidget(self.engine_summary)
@@ -83,9 +99,15 @@ class ActivityViewMixin:
         row.addWidget(widgets.pill_button(
             "Clear search cache…", self.action_clear_search_cache))
         row.addStretch(1)
+        # Y-04 / DAN-1392: the glyph alone is ambiguous, so it is named -
+        # the mockup's `.btn-hint` beside a boxed `.btn--icon`.
+        show_label = QLabel("Show in Queue")
+        show_label.setObjectName("ButtonHint")
+        widgets.uppercase_voice(show_label, widgets.BUTTON_HINT_TRACKING)
+        row.addWidget(show_label)
         row.addWidget(widgets.icon_button(
             "⮐", "Switch to Queue and focus the list.",
-            self.action_show_in_queue,
+            self.action_show_in_queue, boxed=True,
         ))
         layout.addLayout(row)
 
@@ -149,7 +171,7 @@ class ActivityViewMixin:
             row.addWidget(chip)
 
         # Update the pipeline summary
-        self.engine_pipeline.setText(f"Pipeline: {pipeline_summary(self.settings)}")
+        self.engine_pipeline.setText(pipeline_summary(self.settings))
 
         s = self.settings
         low, high = s.delay_min_seconds, s.delay_max_seconds
@@ -173,16 +195,18 @@ class ActivityViewMixin:
         self.log_follow_btn = widgets.icon_button(
             "↻", "Keep the log up to date while this page is open.",
             self._on_follow_toggled, checkable=True, boxed=True,
+            glyph_px=LOG_GLYPH_PX["↻"],
         )
         self.log_follow_btn.setChecked(True)
         layout.addLayout(widgets.section_header(
             "02 // Log",
             self.log_follow_btn,
             widgets.icon_button(
-                "⧉", "Copy the whole log.", self._copy_log, boxed=True),
+                "⧉", "Copy the whole log.", self._copy_log, boxed=True,
+                glyph_px=LOG_GLYPH_PX["⧉"]),
             widgets.icon_button(
                 "⤢", "Open the folder the log file is in.", self._open_log_folder,
-                boxed=True),
+                boxed=True, glyph_px=LOG_GLYPH_PX["⤢"]),
         ))
 
         self.log_view = QPlainTextEdit()
