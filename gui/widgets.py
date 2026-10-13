@@ -47,6 +47,7 @@ STATUSBAR_HEIGHT = 24     # `.statusbar`: 24px with its top rule, B-2
 PAGE_SPACING = 14
 SPLITTER_HANDLE = 12
 INPUT_MIN_HEIGHT = 38     # a single-line edit crushed below this stops being readable
+FOOTER_BUTTON_HEIGHT = 30    # Review's Previous / Next row; the mockup's is 29
 BUTTON_MIN_HEIGHT = 40    # tokens.css's page-level button, plus the 36px boxed icon below
 ICON_BOX = 36
 BUTTON_ROW_SPACING = 12   # tokens.css `--space-3`: the gap between buttons in a row
@@ -905,6 +906,10 @@ GHOST_RIGHT = 40
 # thick, sitting on the frame's own 1px hairline.
 BRACKET_ARM = 12
 BRACKET_WEIGHT = 2
+FOOTER_GAP = 8                  # the footer rule to the row under it (mockup: 8)
+PAIR_GAP = 16                   # tokens.css `--space-4`: between the two frames
+CAPTION_GAP = 8                 # `--space-2`: a frame to its caption
+FRAME_CAPTION_TRACKING = 0.08   # tokens.css `.frame-caption`: letter-spacing 0.08em
 
 
 class GhostKanji(QWidget):
@@ -1081,6 +1086,61 @@ class Brackets(QWidget):
         colour = self.palette().color(self.foregroundRole())
         for rect in self.corner_rects():
             painter.fillRect(rect, colour)
+
+
+def image_frame(content):
+    """`content` inside the dossier frame: a hairline box with corner marks
+    (V-03, the mockup's `.frame`). The frame takes whatever room it is given
+    and `content` fills it, so the frame is the picture's viewport."""
+    frame = QFrame()
+    frame.setObjectName('ImageFrame')
+    inner = QVBoxLayout(frame)
+    inner.setContentsMargins(0, 0, 0, 0)
+    inner.addWidget(content, 1)
+    Brackets(frame)
+    return frame
+
+
+class _ElidedLabel(QLabel):
+    """A one-line label that shortens itself with an ellipsis instead of
+    widening its column: a caption's wording is data (a booru name, a
+    ranking qualifier) and must not set the window's minimum width."""
+
+    def __init__(self, text=''):
+        super().__init__(text)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+
+    def minimumSizeHint(self):
+        return QSize(0, super().minimumSizeHint().height())
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        text = self.fontMetrics().elidedText(
+            self.text(), Qt.TextElideMode.ElideRight, self.contentsRect().width())
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        painter.drawText(self.contentsRect(), int(self.alignment()), text)
+
+
+class FrameCaption(QWidget):
+    """The mono line under an image frame (V-03, the mockup's
+    `.frame-caption`): what the picture is at the left, its dimensions,
+    format and size at the right. Both ends are uppercase by font, so
+    `.text()` keeps the wording it was given."""
+
+    def __init__(self, left='', right=''):
+        super().__init__()
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(12)
+        self.left = _ElidedLabel(left)
+        self.right = QLabel(right)
+        for label in (self.left, self.right):
+            label.setObjectName('FrameCaptionText')
+            uppercase_voice(label, FRAME_CAPTION_TRACKING)
+        self.left.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.right.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(self.left, 1)
+        row.addWidget(self.right, 0)
 
 
 def apply_theme(root, mode):

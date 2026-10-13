@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
-from PIL import Image
 from PyQt6 import sip
 from PyQt6.QtCore import (
     Qt, QSize, QByteArray, QEvent, QItemSelection, QItemSelectionModel, QTimer, pyqtSignal,
@@ -88,7 +87,6 @@ from gui.filter_bar import FilterBar
 from gui import review_shortcuts
 from gui.preview_text import (
     ComparisonReadout, comparison_readout, human_size,
-    local_image_info_text, matched_caption, matched_image_info_text,
     no_candidate_text,
 )
 from gui.session_autosave import SessionAutosaver
@@ -1110,12 +1108,10 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         if entry is None:
             self.local_preview.setPixmap(QPixmap())
             self.local_preview.setText("No image selected")
-            self.local_info_label.setText("")
             self.matched_preview.setPixmap(QPixmap())
             self.matched_preview.setText("No match yet")
-            self.matched_info_label.setText("")
             self.set_comparison_readout(ComparisonReadout())
-            self.matched_caption.setText("Matched image:")
+            self._set_review_captions(None, None)
             self._populate_candidate_combo(None)
             return
 
@@ -1124,19 +1120,17 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
             self.local_preview.setText("Could not load image")
         else:
             self.local_preview.setPixmap(local_pix)
-        self.local_info_label.setText(local_image_info_text(entry.path, Image.open))
 
         self._populate_candidate_combo(entry)
 
         candidate = entry.selected_candidate
         self.set_comparison_readout(comparison_readout(entry, candidate))
+        self._set_review_captions(entry, candidate)
         full_resolution = self.full_resolution_match(entry)
         if full_resolution is not None:
             # Already fetched by Wipe/Differences - sharper than the
             # sample, and redrawing this panel must not swap it back.
             self.matched_preview.setPixmap(full_resolution)
-            self.matched_caption.setText(matched_caption(entry))
-            self.matched_info_label.setText(matched_image_info_text(candidate))
         elif entry.matched_thumb_bytes:
             matched_pix = QPixmap()
             matched_pix.loadFromData(entry.matched_thumb_bytes)
@@ -1145,18 +1139,12 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
                 self.matched_preview.setText("Match found but thumbnail failed to load")
             else:
                 self.matched_preview.setPixmap(matched_pix)
-            self.matched_caption.setText(matched_caption(entry))
-            self.matched_info_label.setText(matched_image_info_text(candidate))
         elif entry.candidates:
             self.matched_preview.setPixmap(QPixmap())
             self.matched_preview.setText("Loading picture…")
-            self.matched_caption.setText("Matched image:")
-            self.matched_info_label.setText(matched_image_info_text(candidate))
         else:
             self.matched_preview.setPixmap(QPixmap())
             self.matched_preview.setText(no_candidate_text(entry))
-            self.matched_caption.setText("Matched image:")
-            self.matched_info_label.setText("")
 
         # Review shows the same entry from the other side of the window.
         self.refresh_review()

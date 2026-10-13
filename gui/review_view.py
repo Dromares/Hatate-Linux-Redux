@@ -33,6 +33,7 @@ parents, not identities.
 """
 from typing import TYPE_CHECKING
 
+from PIL import Image
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -46,7 +47,10 @@ from gui import theme, widgets
 from gui.compare_dialog import (
     WipeView, build_difference_overlay, load_comparison,
 )
-from gui.preview_text import ComparisonReadout
+from gui.preview_text import (
+    ComparisonReadout, local_frame_meta, matched_caption, matched_frame_label,
+    matched_frame_meta, matched_image_info_text,
+)
 from gui.table_delegates import TagRowDelegate
 
 if TYPE_CHECKING:
@@ -104,11 +108,19 @@ class ReviewViewMixin:
         self.review_splitter = splitter
         outer.addWidget(splitter, 1)
 
+        # The rule and the row under it are one unit so the gap between
+        # them (the mockup's 8px) is not the page's 14: every pixel the
+        # footer does not take is the pictures' (V-04).
+        footer = QWidget()
+        foot = QVBoxLayout(footer)
+        foot.setContentsMargins(0, 0, 0, 0)
+        foot.setSpacing(widgets.FOOTER_GAP)
         rule = QFrame()
         rule.setObjectName("FooterRule")    # the mockup's 1px top rule over the footer
         rule.setFixedHeight(1)
-        outer.addWidget(rule)
-        outer.addWidget(self._build_position_strip())
+        foot.addWidget(rule)
+        foot.addWidget(self._build_position_strip())
+        outer.addWidget(footer)
         return page
 
     # -- the pictures ---------------------------------------------------
@@ -237,33 +249,31 @@ class ReviewViewMixin:
         return tools
 
     def _build_pair_view(self):
-        """The old preview panel, given the room it never had."""
+        """Two equal frames with the picture filling each, and a mono
+        caption under each (V-03). The frames take every pixel the page has
+        left over - the view's whole job is looking at the picture (V-04) -
+        so nothing sits above them but the compare header."""
         panel = QWidget()
         grid = QGridLayout(panel)
         grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(widgets.PAIR_GAP)
+        grid.setVerticalSpacing(widgets.CAPTION_GAP)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
-        grid.setRowStretch(2, 1)
+        grid.setRowStretch(0, 1)
 
-        grid.addWidget(widgets.muted("Local image (being searched):"), 0, 0)
-        self.local_info_label = widgets.muted("")
-        grid.addWidget(self.local_info_label, 1, 0)
         self.local_preview = widgets.ScaledImageLabel("No image selected")
         self.local_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.local_preview.setMinimumSize(280, 260)
         self.local_preview.setSizePolicy(QSizePolicy.Policy.Expanding,
                                          QSizePolicy.Policy.Expanding)
         self.local_preview.setFrameShape(QFrame.Shape.NoFrame)
-        grid.addWidget(self.local_preview, 2, 0)
-
-        self.matched_caption = widgets.muted("Matched image:")
-        grid.addWidget(self.matched_caption, 0, 1)
-        self.matched_info_label = widgets.muted("")
-        # A parser that knows WHY it produced no tags says so on a second
-        # line here, and those reasons are sentences rather than the
-        # "1920x1080 - JPEG" this otherwise holds.
-        self.matched_info_label.setWordWrap(True)
-        grid.addWidget(self.matched_info_label, 1, 1)
+        self.local_frame = widgets.image_frame(self.local_preview)
+        grid.addWidget(self.local_frame, 0, 0)
+        local_caption = widgets.FrameCaption("Local")
+        self.local_frame_caption = local_caption
+        self.local_info_label = local_caption.right
+        grid.addWidget(local_caption, 1, 0)
 
         self.matched_preview = widgets.ScaledImageLabel("No match yet")
         self.matched_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -275,8 +285,44 @@ class ReviewViewMixin:
         self.matched_preview.customContextMenuRequested.connect(
             self._show_matched_preview_menu)
         self.matched_preview.setCursor(Qt.CursorShape.PointingHandCursor)
-        grid.addWidget(self.matched_preview, 2, 1)
+        self.matched_frame = widgets.image_frame(self.matched_preview)
+        grid.addWidget(self.matched_frame, 0, 1)
+        matched_caption = widgets.FrameCaption("Match")
+        self.matched_frame_caption = matched_caption
+        self.matched_caption = matched_caption.left
+        self.matched_info_label = matched_caption.right
+        grid.addWidget(matched_caption, 1, 1)
+
+        # A parser that knows WHY it produced no tags says so on a line of
+        # its own, and those reasons are sentences rather than the
+        # "1400 × 2200 · PNG" the caption holds. Hidden - and so costing
+        # the frames nothing - when there is nothing to say.
+        self.matched_note_label = widgets.hint("")
+        self.matched_note_label.hide()
+        grid.addWidget(self.matched_note_label, 2, 1)
         return panel
+
+    def _set_review_captions(self, entry, candidate):
+        """Both captions from `entry` and its selected `candidate`."""
+        if entry is None:
+            local, label, meta, note = "", "Match", "", ""
+        else:
+            local = local_frame_meta(entry.path, Image.open)
+            if entry.candidates:
+                label = matched_frame_label(entry)
+                meta = matched_frame_meta(candidate)
+                if not meta:
+                    meta = "Image info not available"
+                note = matched_image_info_text(candidate).partition("\n")[2]
+            else:
+                label, meta, note = "Match — none", "—", ""
+        self.local_info_label.setText(local)
+        self.matched_caption.setText(label)
+        self.matched_caption.setToolTip(
+            matched_caption(entry) if entry is not None and entry.candidates else "")
+        self.matched_info_label.setText(meta)
+        self.matched_note_label.setText(note)
+        self.matched_note_label.setVisible(bool(note))
 
     def _build_wipe_view(self):
         panel = QWidget()
@@ -480,6 +526,10 @@ class ReviewViewMixin:
             "Next ▸", self._key_for("next_row"), lambda: self._run_review_action("next_row"))
         self.review_next_btn.setToolTip("Next image.")
         row.addWidget(self.review_next_btn)
+        for button in (self.review_prev_btn, self.review_next_unreviewed_btn,
+                       self.review_next_btn):
+            button.setProperty("footer", True)
+            button.setMinimumHeight(widgets.FOOTER_BUTTON_HEIGHT)
         return strip
 
     def _run_review_action(self, action_id):

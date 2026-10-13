@@ -86,6 +86,10 @@ def no_candidate_text(entry) -> str:
     return NO_CANDIDATE_TEXT.get(entry.status, NOT_SEARCHED_TEXT)
 
 
+def _dimensions(width, height, spaced=False) -> str:
+    return f"{width} × {height}" if spaced else f"{width}×{height}"
+
+
 def local_image_info_text(path: str, image_opener) -> str:
     """Dimensions, file size, and format for the local file - all read
     straight from disk, no network needed.
@@ -93,10 +97,22 @@ def local_image_info_text(path: str, image_opener) -> str:
     `image_opener` is PIL's Image.open, passed in so this stays a function
     about text rather than about imaging.
     """
+    parts = _local_info_parts(path, image_opener, spaced=False)
+    return " • ".join(parts) if parts else "Could not read image info"
+
+
+def local_frame_meta(path: str, image_opener) -> str:
+    """The same facts as `local_image_info_text`, in the caption under the
+    picture's frame: `560 × 900 · PNG · 10.1 KB`, and nothing at all when
+    the file can't be read - the frame already says so."""
+    return " · ".join(_local_info_parts(path, image_opener, spaced=True))
+
+
+def _local_info_parts(path: str, image_opener, spaced: bool) -> list:
     parts = []
     try:
         with image_opener(path) as im:
-            parts.append(f"{im.width}×{im.height}")
+            parts.append(_dimensions(im.width, im.height, spaced))
             if im.format:
                 parts.append(im.format)
     except (OSError, ValueError):
@@ -107,7 +123,38 @@ def local_image_info_text(path: str, image_opener) -> str:
             parts.append(size_str)
     except OSError:
         pass
-    return " • ".join(parts) if parts else "Could not read image info"
+    return parts
+
+
+def matched_frame_label(entry) -> str:
+    """`Match — Danbooru`, or `Match — Yande.re · ~77% · ranking, not
+    measured` when the score is only a rank (B-5: production's qualifier
+    stays - an unmeasured score must never read as a measurement).
+
+    A measured score is not repeated here; it is the header's readout."""
+    label = "Match"
+    if entry.booru_name:
+        label += f" — {entry.booru_name}"
+    if entry.similarity is not None and not entry.similarity_measured:
+        label += f" · {similarity_label(entry.similarity, False)} · ranking, not measured"
+    return label
+
+
+def matched_frame_meta(candidate) -> str:
+    """The match's dimensions, format and size for its caption, in the
+    caption's own separators. Empty when there is no candidate, and the
+    caller shows a dash then."""
+    if candidate is None:
+        return ""
+    parts = []
+    if candidate.width and candidate.height:
+        parts.append(_dimensions(candidate.width, candidate.height, spaced=True))
+    if candidate.remote_format:
+        parts.append(candidate.remote_format)
+    size_str = human_size(candidate.remote_size_bytes)
+    if size_str:
+        parts.append(size_str)
+    return " · ".join(parts)
 
 
 def matched_image_info_text(candidate) -> str:
