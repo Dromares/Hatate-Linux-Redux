@@ -985,25 +985,14 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        blurb = widgets.hint(
+        blurb, blurb_row = widgets.empty_prose(
             "Or add them from a folder, or pull them out of a running Hydrus client. "
             "Anything added here is searched on IQDB and SauceNAO, and what comes back "
             "is yours to review before any of it reaches Hydrus."
         )
-        blurb.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # Fixed width inside a stretch row, rather than a maximum width and
-        # an alignment flag. A word-wrapped QLabel handed an alignment in a
-        # box layout reports the height its text would need UNWRAPPED, so
-        # the layout gives it one line's worth and the rest draws over
-        # whatever is above it.
-        blurb.setFixedWidth(520)
-        blurb_row = QHBoxLayout()
-        blurb_row.addStretch(1)
-        blurb_row.addWidget(blurb)
-        blurb_row.addStretch(1)
-        layout.addSpacing(6)
+        layout.addSpacing(10)
         layout.addLayout(blurb_row)
-        layout.addSpacing(18)
+        layout.addSpacing(24)
 
         buttons = QHBoxLayout()
         buttons.setSpacing(widgets.BUTTON_ROW_SPACING)
