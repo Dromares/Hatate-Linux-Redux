@@ -17,9 +17,9 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from . import _path  # noqa: F401,E402
+from ._qt_app import ensure_app
 
 from PyQt6.QtCore import QObject, QThread  # noqa: E402
-from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 from core.config import Settings  # noqa: E402
 from core.models import ImageEntry  # noqa: E402
@@ -36,7 +36,7 @@ def setUpModule():
     does the same, for the same reason). This module never calls exec()
     on it - see _gui_thread() below for why."""
     global _app
-    _app = QApplication.instance() or QApplication([])
+    _app = ensure_app()
 
 
 class _GuiThread(QThread):

@@ -9,6 +9,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from tests import _path  # noqa: F401  (puts the project root on sys.path)
+from tests._qt_app import ensure_app
 
 from gui import theme
 
@@ -484,9 +485,9 @@ class TestTableItemsAreNeverStyled(unittest.TestCase):
     def test_the_model_background_survives_the_sheet(self):
         """The same measurement, made rather than remembered."""
         from PyQt6.QtGui import QColor
-        from PyQt6.QtWidgets import QApplication, QTableWidget, QTableWidgetItem
+        from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
 
-        app = QApplication.instance() or QApplication([])
+        app = ensure_app()
         painted = QColor("#2e7d32")
 
         app.setStyleSheet(theme.stylesheet("dark"))
@@ -546,9 +547,9 @@ class TestEngineChipsCarryNoHue(unittest.TestCase):
         proof the chip shows the surface behind it rather than painting
         its own solid colour block, in both themes."""
         from PyQt6.QtGui import QColor
-        from PyQt6.QtWidgets import QApplication, QLabel, QWidget
+        from PyQt6.QtWidgets import QLabel, QWidget
 
-        app = QApplication.instance() or QApplication([])
+        app = ensure_app()
         try:
             for mode in ("dark", "light"):
                 app.setStyleSheet(theme.stylesheet(mode))
@@ -595,9 +596,8 @@ class TestFontWeightsMatchTheRegisteredFace(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from PyQt6.QtWidgets import QApplication
 
-        cls.app = QApplication.instance() or QApplication([])
+        cls.app = ensure_app()
         from gui.fonts import register_fonts
 
         register_fonts()

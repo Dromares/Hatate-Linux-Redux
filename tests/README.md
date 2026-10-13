@@ -97,6 +97,36 @@ Cases marked `REGRESSION:` in their docstring name the specific bug:
 | rule34.xxx Data API returns a bare list, not Gelbooru's `{post: [...]}` wrap | `test_search_quality` |
 | IQDB 3D thumbnails must join against 3d.iqdb.org, not iqdb.org | `test_search_quality` |
 
+## Qt tests share one QApplication - get it from `ensure_app()`
+
+Qt allows one `QApplication` per process, and PyQt destroys one it created
+as soon as the last *Python* reference goes. A `QApplication.instance() or
+QApplication([])` bound to a function local or a `TestCase` attribute drops
+that reference when the test returns (unittest releases TestCase instances),
+so the app is torn down and the next test or module rebuilds one in the same
+process. That corrupts Qt's global state; a later `SettingsDialog` then
+segfaults (exit 139) in `QLabel.text()` (DAN-1351, DAN-1361).
+
+The full `discover` run hides it, because a module that holds the app in
+`setUpModule` happens to run first. Reorder or shard the suite and it comes
+back.
+
+Rule: in any test module, never call `QApplication([])` yourself. Use
+
+```python
+from tests._qt_app import ensure_app   # or: from ._qt_app import ensure_app
+app = ensure_app()
+```
+
+`ensure_app()` creates the app once and pins it in a module global, so it
+lives until the interpreter exits. `test_gui_harness` fails if a test module
+builds its own. To check a new GUI module, pair it with a module that keeps
+no app of its own:
+
+```bash
+python -m unittest tests.<your_module> tests.test_gui_smoke.TestDeviantArtCookieReconciliation
+```
+
 ## GUI smoke tests
 
 `test_gui_smoke.py` constructs the real `MainWindow` and `SettingsDialog`

@@ -38,6 +38,7 @@ import tempfile
 import unittest
 
 from . import _path  # noqa: F401  (sys.path + throwaway XDG_CONFIG_HOME)
+from ._qt_app import ensure_app
 
 # Must be set before PyQt6 is imported, or Qt tries to reach a display.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -49,7 +50,7 @@ os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp(prefix="hatate-gui-harness-")
 try:
     from PyQt6.QtCore import Qt, QAbstractTableModel
     from PyQt6.QtGui import QImage
-    from PyQt6.QtWidgets import QApplication, QDialog, QMainWindow, QStyledItemDelegate, QWidget
+    from PyQt6.QtWidgets import QApplication, QDialog, QMainWindow, QStyledItemDelegate, QWidget  # noqa: F401  (availability probe)
     HAVE_QT = True
 except ImportError:  # pragma: no cover - depends on environment
     HAVE_QT = False
@@ -57,14 +58,13 @@ except ImportError:  # pragma: no cover - depends on environment
 import requests
 
 _app = None
-_app_keepalive = None  # see make_themed_window
 
 
 def setUpModule():
     """One QApplication for the whole module - Qt allows only one."""
     global _app
     if HAVE_QT:
-        _app = QApplication.instance() or QApplication([])
+        _app = ensure_app()
 
 
 # -- the no-network guard ----------------------------------------------------
@@ -197,16 +197,8 @@ def make_themed_window(testcase, mode="dark"):
     from gui.fonts import register_fonts
     from gui.main_window import MainWindow
 
-    app = QApplication.instance() or QApplication([])
-    # DAN-1351: PyQt owns a QApplication it created, so the last Python
-    # reference decides when it is destroyed. A module without its own
-    # setUpModule (most of the ones that import this helper) held none -
-    # the caller's ``_app, win = ...`` is a local - so the app was torn
-    # down when the first test returned and a second one built by the next
-    # test or module. Rebuilding a QApplication in-process corrupts Qt's
-    # global state, and a later SettingsDialog segfaulted in QLabel.text().
-    global _app_keepalive
-    _app_keepalive = app
+    # DAN-1351/DAN-1361: ensure_app() pins the QApplication for the process.
+    app = ensure_app()
     register_fonts()
     # Registered first so it runs last: the delete below is only queued, and
     # an undelivered one leaves the window alive for every later test's
@@ -574,3 +566,48 @@ class TestThemedWindowKeepsTheApplicationAlive(unittest.TestCase):
         proc = subprocess.run([sys.executable, "-c", self.SCRIPT], cwd=root, env=env,
                               capture_output=True, text=True, timeout=120)
         self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
+
+
+@unittest.skipUnless(HAVE_QT, "PyQt6 not installed")
+class TestEnsureAppPinsTheApplication(unittest.TestCase):
+    """DAN-1361: every test module gets its QApplication from
+    ``tests._qt_app.ensure_app``, which pins it for the process."""
+
+    SCRIPT = (
+        "import gc\n"
+        "from tests import _path\n"
+        "from PyQt6.QtWidgets import QApplication\n"
+        "from tests._qt_app import ensure_app\n"
+        "def build():\n"
+        "    app = ensure_app()  # a local, like the call sites it replaces\n"
+        "build()\n"
+        "gc.collect()\n"
+        "assert QApplication.instance() is not None, 'QApplication was destroyed'\n"
+    )
+
+    def test_application_survives_the_caller_dropping_its_reference(self):
+        import subprocess
+        import sys
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+        root = str(pathlib.Path(__file__).resolve().parent.parent)
+        proc = subprocess.run([sys.executable, "-c", self.SCRIPT], cwd=root, env=env,
+                              capture_output=True, text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
+
+    def test_no_test_module_builds_its_own_application(self):
+        """A bare ``QApplication([])`` bound to a local or a TestCase
+        attribute is the DAN-1351 crash waiting for the suite to be
+        reordered or sharded. test_gui_smoke only builds one inside a
+        subprocess script, where it is the sole owner."""
+        import re
+        tests_dir = pathlib.Path(__file__).resolve().parent
+        allowed = {"_qt_app.py", "test_gui_smoke.py", "test_gui_harness.py"}
+        offenders = []
+        for path in sorted(tests_dir.rglob("*.py")):
+            # perf_profiling/ is a run-once CLI profiler, not part of the suite.
+            if path.name in allowed or "perf_profiling" in path.parts:
+                continue
+            for n, line in enumerate(path.read_text().splitlines(), 1):
+                if re.search(r"\bQApplication\(\[", line):
+                    offenders.append(f"{path.relative_to(tests_dir)}:{n}")
+        self.assertEqual(offenders, [], "use tests._qt_app.ensure_app() instead")

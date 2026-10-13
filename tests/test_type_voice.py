@@ -15,6 +15,7 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from tests import _path  # noqa: F401  (puts the project root on sys.path)
+from tests._qt_app import ensure_app
 
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QLabel, QPushButton, QToolButton
@@ -232,9 +233,8 @@ class TestBareWidgets(GuiTestCase):
     except where a test renders pixels."""
 
     def setUp(self):
-        from PyQt6.QtWidgets import QApplication
         from gui.fonts import register_fonts
-        self.app = QApplication.instance() or QApplication([])
+        self.app = ensure_app()
         register_fonts()
 
     def test_the_kanji_glyph_exists_in_the_bundled_face(self):

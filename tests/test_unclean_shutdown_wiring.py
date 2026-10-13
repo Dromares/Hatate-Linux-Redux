@@ -11,15 +11,15 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from . import _path  # noqa: F401
+from ._qt_app import ensure_app
 
-from PyQt6.QtWidgets import QApplication
 
 _APP = None
 
 
 def _app():
     global _APP
-    _APP = QApplication.instance() or QApplication([])
+    _APP = ensure_app()
     return _APP
 
 
