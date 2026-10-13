@@ -258,15 +258,18 @@ class TestHintBar(_ReviewCase):
 
     def test_the_bar_carries_the_mockups_1px_rule_across_the_page(self):
         win = self._review_window()
+        # The rule and the footer row are one unit (DAN-1174: the gap between
+        # them is the mockup's 8px, not the page's 14, so the pictures get it).
         rule = next(f for f in win.review_page.findChildren(QFrame)
-                    if f.objectName() == "FooterRule" and f.parentWidget() is win.review_page)
+                    if f.objectName() == "FooterRule")
+        footer = rule.parentWidget()
+        self.assertIs(footer.parentWidget(), win.review_page)
         self.assertEqual(rule.height(), 1)
         self.assertEqual(rule.width(), win.review_page.width())
         strip = win.review_hint_bar.parentWidget()
         self.assertGreater(strip.mapTo(win.review_page, strip.rect().topLeft()).y(), rule.y())
         # and nothing sits between the rule and the footer row
-        self.assertEqual(rule.y() + 1 + widgets.PAGE_SPACING,
-                         strip.mapTo(win.review_page, strip.rect().topLeft()).y())
+        self.assertEqual(rule.y() + 1 + widgets.FOOTER_GAP, strip.y())
 
     def test_the_bar_is_centred_between_the_previous_and_next_buttons(self):
         win = self._review_window(rows=3)

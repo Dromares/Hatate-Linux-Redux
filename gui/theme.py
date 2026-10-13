@@ -561,6 +561,18 @@ def stylesheet(mode):
             color: {ink_65};
             background: transparent;
     }}
+    /* The dossier frame round a picture (widgets.image_frame, V-03) and
+       the mono caption under it. The corner marks are widgets.Brackets. */
+    QFrame#ImageFrame {{
+            background: {card};
+            border: 1px solid {ink_18};
+    }}
+    QLabel#FrameCaptionText {{
+            font-family: {font_mono};
+            font-size: 10px;
+            color: {ink_65};
+            background: transparent;
+    }}
     QLabel {{ background: transparent; }}
 
     /* Keycaps (widgets.KeyCap) - the mockup's `.kbd`: a hairline box round a
@@ -742,6 +754,10 @@ def stylesheet(mode):
             border: 1px solid {ink_46};
             padding: 9px 18px;
     }}
+    /* Review's footer buttons are the mockup's `.review-footer .btn`: 8px
+       of padding, ~29px tall, not the 40px page-level button - the 11px
+       saved are the picture's (V-04). */
+    QPushButton[footer="true"] {{ padding-top: 4px; padding-bottom: 4px; }}
     QPushButton:hover {{ border-color: {ink_58}; }}
     QPushButton:pressed {{ background: {card_alt}; }}
     QPushButton:disabled {{ color: {ink_45}; border-color: {ink_46}; }}
