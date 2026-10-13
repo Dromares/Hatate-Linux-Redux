@@ -174,7 +174,7 @@ class _UppercaseChecks:
                 self.assertEqual(font.family(), "JetBrains Mono")
                 self.assertGreater(font.letterSpacing(), 100)
                 self.assertNotEqual(font.capitalization(), CAPS)
-        self.assertEqual(band.filter_status_button.text(), "Status: all")
+        self.assertEqual(band.filter_status_button.text(), "Status: All")
         self.assertEqual(band.filter_clear_button.text(), "Clear")
 
 
