@@ -1160,6 +1160,14 @@ _SWEEP_EXEMPTIONS = [
                   "name (test_status_bar_border_is_documented_quiet_exception).",
     },
     {
+        "kind": "border", "selectors": frozenset({"QMenuBar"}),
+        "fg_token": "ink_18", "bg_prefix": "page",
+        "reason": "DAN-1277 / U2 (mockup B-1): the hairline under the native menubar "
+                  "is a passive window-chrome separator, the mirror of QStatusBar's "
+                  "top rule above - not a control's edge and not a hit target. "
+                  "Quiet on purpose; the menu items themselves are ink_100 text.",
+    },
+    {
         "kind": "border", "selectors": frozenset({"QGroupBox"}),
         "fg_token": "ink_18", "bg_prefix": None,  # ambient - a settings-dialog grouping frame
         "reason": "Same call as QStatusBar (DAN-241's own comparison): a passive "
