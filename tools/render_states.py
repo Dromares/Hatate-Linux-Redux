@@ -131,6 +131,14 @@ class _Renderer:
             (err, None, None, None, True, False, False, 0),
             (uns, None, None, None, True, False, False, 0),
         ]
+        # The columns the tuples above do not carry (DAN-1172): match long edge
+        # over the local 900px one (the mockup's 2.5x / 0.4x / 1.4x / "=", and 0
+        # for a site that states no size), the Upscale verdict and where the
+        # result came from. Left blank these columns render as dashes and
+        # Q-08..Q-13 cannot be seen.
+        match_long = {0: 2250, 1: 0, 2: 360, 4: 1260, 5: 900}
+        upscale = {0: "clear", 2: "flagged", 5: "clear"}
+        source = {0: "cached", 2: "fresh", 5: "cached"}
         names = ["solo", "outdoors", "sky", "cloud", "smile", "sitting", "long_hair", "blue_eyes",
                  "flower", "dress", "looking_at_viewer", "tree", "grass", "1girl"]
         out = []
@@ -141,15 +149,17 @@ class _Renderer:
                 out.append(e)
                 continue
             tags = [Tag(n, TagSource.BOORU) for n in names[:ntags]]
+            long_edge = match_long.get(i, 2200)
+            mw, mh = round(long_edge * 560 / 900), long_edge
             thumb = self._png_bytes((1400, 2200), (40, 60, 90))
             c = MatchCandidate(
                 url=f"https://example.invalid/post/{i}", source_name=booru, similarity=sim,
-                similarity_measured=measured, width=1400, height=2200, engine=engine,
+                similarity_measured=measured, width=mw, height=mh, engine=engine,
                 booru_tags=tags, booru_tags_fetched=True, thumb_bytes=thumb)
             e.booru_name = booru
             e.similarity = sim
             e.similarity_measured = measured
-            e.match_width, e.match_height = 1400, 2200
+            e.match_width, e.match_height = mw, mh
             e.local_width, e.local_height = 560, 900
             e.tags = tags
             e.candidates = [c]
@@ -158,6 +168,8 @@ class _Renderer:
             e.sent_to_hydrus = sent
             e.hydrus_import_confirmed = sent
             e.reviewed = reviewed
+            e.upscale_verdict = upscale.get(i)
+            e.result_source = source.get(i)
             out.append(e)
         return out
 
