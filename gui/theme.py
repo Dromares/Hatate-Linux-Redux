@@ -164,6 +164,8 @@ STATUS_GLYPHS = {
     'queued': '◐',         # ◐  pending, same family as 'poor'
     'estimated': '·',      # ·  absence of information, same as
                                  #    'not_searched'
+    'reviewed': '●',       # ●  the Reviewed column's mark (Q-13), the
+                                 #    same glyph the Sent chip draws
 }
 
 # The second channel: an ink-ramp tier rather than a hue. Mirrors
@@ -197,6 +199,7 @@ STATUS_WEIGHTS = {
     'sent': 'ink_65',
     'queued': 'ink_65',
     'estimated': 'ink_65',
+    'reviewed': 'ink_65',
 }
 
 # Only the two glyphs JetBrains Mono can't draw need routing to the
@@ -220,6 +223,9 @@ CHIP_LABELS = {
     'searching': 'Searching',
     'sent': 'Sent',
     'queued': 'Queued',
+    # The Reviewed column's chip is the mark alone, the way the mockup draws
+    # it (`.status--sent` with no word after the glyph).
+    'reviewed': '',
     # 'estimated' is deliberately NOT here. Its chip carries the
     # similarity number itself, and chip_label() falls back to the cell's
     # own text for a key it does not know - adding a word for it would

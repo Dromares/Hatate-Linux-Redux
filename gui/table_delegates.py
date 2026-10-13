@@ -44,6 +44,12 @@ GLYPH_GAP = 6      # between the glyph and the label that follows it
 TAG_ROW_HEIGHT = 32   # the mockup's measured .tag-row, rule included
 TAG_ROW_PAD = 16      # its --space-4 side padding
 TAG_FONT_PX = 13
+CHIP_FONT_PX = 11      # tokens.css --text-label: the chip's mono label (Q-08)
+CHIP_GLYPH_PX = 13     # its .status__glyph
+CHIP_TRACKING = 106    # percent: the chip's 0.06em letter-spacing
+BOX_PAD_X = 6          # .status--error's `padding: 1px 6px` and 1px border
+BOX_PAD_Y = 1
+BOXED_CHIPS = frozenset(("error",))
 _TAG_SOURCE = re.compile(r"^(\[[^\]]+\])\s(.*)$", re.DOTALL)
 
 
@@ -113,7 +119,13 @@ class ChipDelegate(RuledRowDelegate):
         glyph_font_family = theme.status_glyph_font(key)
         label = theme.chip_label(key, text)
 
-        font = QFont(opt.font)
+        # The chip's voice is the mono label, not the table's ambient sans
+        # (Q-08); the glyph keeps its own larger size beside it.
+        font = theme.mono_font(opt.font)
+        font.setPixelSize(CHIP_FONT_PX)
+        font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, CHIP_TRACKING)
+        if key in BOXED_CHIPS:
+            font.setBold(True)      # .status--error is weight 700
         if key == "searching":
             # Mirrors tokens.css's .status--searching: the one status
             # that is neither a confirmed result nor a decision pending
@@ -128,10 +140,33 @@ class ChipDelegate(RuledRowDelegate):
         painter.save()
         painter.setPen(color)
 
+        glyph_font = QFont(font)
+        glyph_font.setPixelSize(CHIP_GLYPH_PX)
+        glyph_font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 100)
+        if glyph_font_family:
+            glyph_font.setFamily(glyph_font_family)
+
+        if key in BOXED_CHIPS:
+            # Error is the one status that has to read by shape AND without
+            # its ink tier, so it alone gets a hairline box (Q-09). The
+            # border is the DAN-224 border tier (ink_46), not the mockup's
+            # ink_28, which is under the 3:1 non-text floor.
+            box_pen = color if opt.state & QStyle.StateFlag.State_Selected \
+                else theme.ink_color(mode, "ink_46")
+            inner = (QFontMetrics(glyph_font).horizontalAdvance(glyph) + GLYPH_GAP if glyph else 0) \
+                + QFontMetrics(font).horizontalAdvance(label)
+            height = max(QFontMetrics(font).height(), QFontMetrics(glyph_font).height()) \
+                + 2 * (BOX_PAD_Y + 1)
+            width = min(inner + 2 * (BOX_PAD_X + 1), max(0, right_edge - x))
+            box = QRectF(x + 0.5, cell.top() + (cell.height() - height) / 2 + 0.5,
+                         width - 1, height - 1)
+            painter.setPen(box_pen)
+            painter.drawRect(box)
+            painter.setPen(color)
+            right_edge = x + width - (BOX_PAD_X + 1)
+            x += BOX_PAD_X + 1
+
         if glyph:
-            glyph_font = QFont(font)
-            if glyph_font_family:
-                glyph_font.setFamily(glyph_font_family)
             glyph_width = QFontMetrics(glyph_font).horizontalAdvance(glyph)
             glyph_rect = QRectF(x, cell.top(), glyph_width, cell.height())
             painter.setFont(glyph_font)
@@ -155,8 +190,12 @@ class ChipDelegate(RuledRowDelegate):
         key = index.data(CHIP_ROLE)
         glyph = theme.status_glyph(key) if key else None
         if glyph:
-            glyph_width = QFontMetrics(option.font).horizontalAdvance(glyph)
+            glyph_font = theme.mono_font(option.font)
+            glyph_font.setPixelSize(CHIP_GLYPH_PX)
+            glyph_width = QFontMetrics(glyph_font).horizontalAdvance(glyph)
             size.setWidth(size.width() + glyph_width + GLYPH_GAP)
+        if key in BOXED_CHIPS:
+            size.setWidth(size.width() + 2 * (BOX_PAD_X + 1))
         return size
 
 

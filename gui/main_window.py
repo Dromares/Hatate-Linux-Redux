@@ -69,7 +69,7 @@ from gui.add_tags_dialog import AddTagsDialog
 # with the model, but the sort keys here (and the GUI tests) still import
 # them from this module.
 from gui.image_table_model import (  # noqa: F401
-    COLUMNS, COL_ENGINE, COL_SENT, COL_SIMILARITY, COL_STATUS, COL_THUMB, ImageTableModel,
+    COLUMNS, COL_ENGINE, COL_REVIEWED, COL_SENT, COL_SIMILARITY, COL_STATUS, COL_THUMB, ImageTableModel,
     default_column_widths, header_layout_is_usable,
     sort_key_for_column, _entry_cache_label, _entry_engine_label,
     _entry_sent_label, _entry_size_delta_label, _size_delta_weight,
@@ -876,6 +876,9 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         # engine's ranking rather than a measurement - the model returns
         # no chip key for a measured score, so those stay plain text.
         self.table.setItemDelegateForColumn(COL_SIMILARITY, self._chip_delegate)
+        # Reviewed draws the same glyph Sent does (Q-13), through the same
+        # painter, so the two marks cannot drift apart in size or position.
+        self.table.setItemDelegateForColumn(COL_REVIEWED, self._chip_delegate)
 
         self._restore_table_header_state()
         # A saved layout is the user's; without one the default widths are
@@ -1133,7 +1136,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
             # another, so it is the one place a ranking sitting next to a
             # real score is most likely to be read as the same kind of
             # number. Same "~" the table uses.
-            score = similarity_label(c.similarity, c.similarity_measured)
+            score = similarity_label(c.similarity, c.score_is_measured)
             self.candidate_combo.addItem(f"{site} — {score} ({c.engine}) — {c.url}")
             self.candidate_combo.setItemData(i, c.url, Qt.ItemDataRole.ToolTipRole)
 

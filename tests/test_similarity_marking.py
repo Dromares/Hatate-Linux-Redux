@@ -18,6 +18,7 @@ perfectly plausible number either way.
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from . import _path  # noqa: F401
 
@@ -261,7 +262,7 @@ class TestTheTableColumnSaysIt(unittest.TestCase):
         entry = ImageEntry(path="/tmp/a.png")
         self.entries.append(entry)
         self.model.refresh_all()
-        self.assertEqual(self._cell(Qt.ItemDataRole.DisplayRole), "")
+        self.assertEqual(self._cell(Qt.ItemDataRole.DisplayRole), "\u2014")
         self.assertIsNone(self._cell(CHIP_ROLE))
 
     def test_the_tooltip_explains_the_mark(self):
