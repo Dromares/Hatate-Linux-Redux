@@ -561,6 +561,25 @@ def stylesheet(mode):
             color: {ink_65};
             background: transparent;
     }}
+    /* DAN-1392: tokens.css `.pipeline-line` (11px mono, 0.06em, names bold
+       and a tier brighter) and `.btn-hint` (10px mono caps, ink-65). */
+    QLabel#PipelineLine, QLabel#PipelineNames {{
+            font-family: {font_mono};
+            font-size: 11px;
+            color: {ink_65};
+            background: transparent;
+    }}
+    QLabel#PipelineNames {{
+            font-weight: 700;
+            color: {ink_100};
+    }}
+    QLabel#ButtonHint {{
+            font-family: {font_mono};
+            font-size: 10px;
+            color: {ink_65};
+            background: transparent;
+            margin-right: 8px;
+    }}
     /* The Activity log's "Writing to <path>" line (Y-07): the mockup's
        `.log-footer`, 10px mono. ink_65 rather than its ink_45 - the
        readable-text floor in tests/test_theme.py. */
@@ -665,13 +684,13 @@ def stylesheet(mode):
             background: transparent; color: {ink_100};
             border: 1px solid {ink_46};
             font-family: {font_mono};
-            padding: 2px 10px; font-size: 11px;
+            padding: 8px 12px; font-size: 11px;
     }}
     QLabel#EngineChipOff {{
             background: transparent; color: {ink_65};
             border: 1px solid {ink_18};
             font-family: {font_mono};
-            padding: 2px 10px; font-size: 11px;
+            padding: 8px 12px; font-size: 11px;
     }}
 
     /* ---- inputs ---- */
