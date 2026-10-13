@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 from core import crashlog
 from core.models import ImageEntry, MatchStatus
 from gui import theme, widgets
-from gui.image_table_model import COL_ENGINE, INTERRUPTED_MARKER
+from gui.image_table_model import COL_ENGINE, EMPTY_CELL, INTERRUPTED_MARKER
 from tests.test_flat_surfaces import MODES, _near, _rgb
 from tests.test_ghost_kanji import _ink_over
 from tests.test_gui_smoke import GuiTestCase
@@ -383,7 +383,7 @@ class TestRowMarker(_InterruptedWindow):
                         self.assertEqual(shown, INTERRUPTED_MARKER)
                         self.assertTrue(font.italic())
                     else:
-                        self.assertEqual(shown, "", name)
+                        self.assertEqual(shown, EMPTY_CELL, name)
                         self.assertIsNone(font, name)
 
     def test_the_marker_is_dim_but_clears_the_text_floor(self):
@@ -426,7 +426,7 @@ class TestRowMarker(_InterruptedWindow):
         entry = next(e for e in win.entries if e.interrupted_mid_search)
         cell = dict(self._engine_cells(win))["p12a-3.png"]
         entry.status = MatchStatus.NOT_FOUND
-        self.assertEqual(cell.data(Qt.ItemDataRole.DisplayRole), "")
+        self.assertEqual(cell.data(Qt.ItemDataRole.DisplayRole), EMPTY_CELL)
 
     def test_the_flag_is_not_saved(self):
         from core.session import _entry_to_dict

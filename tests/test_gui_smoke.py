@@ -2167,12 +2167,12 @@ class TestImageTableModel(GuiTestCase):
         self.assertEqual(self._cell(0, m.COL_TAGS), "0")
         self.assertEqual(self._cell(0, m.COL_CACHE), "Cached")
 
-    def test_similarity_of_none_is_blank_not_zero(self):
+    def test_similarity_of_none_is_a_dash_not_zero(self):
         """A searched-but-unmatched image and a 0%-similarity match are
         different things; showing "0%" for the former would misread."""
         from gui import image_table_model as m
         self._add(similarity=None)
-        self.assertEqual(self._cell(0, m.COL_SIMILARITY), "")
+        self.assertEqual(self._cell(0, m.COL_SIMILARITY), "\u2014")
 
     def test_missing_file_is_marked_in_the_file_column(self):
         """Marked here rather than in Status, which would overwrite the
@@ -2218,7 +2218,7 @@ class TestImageTableModel(GuiTestCase):
         self._add(path="/tmp/3.png")
         self.assertEqual(self._cell(0, m.COL_SENT), "Sent")
         self.assertEqual(self._cell(1, m.COL_SENT), "Queued")
-        self.assertEqual(self._cell(2, m.COL_SENT), "")
+        self.assertEqual(self._cell(2, m.COL_SENT), "\u2014")
 
         self.assertEqual(self._cell(0, m.COL_SENT, m.CHIP_ROLE), "sent")
         self.assertEqual(self._cell(1, m.COL_SENT, m.CHIP_ROLE), "queued")
@@ -3410,8 +3410,8 @@ class TestResetRowsAction(GuiTestCase):
         m = self.win.table_model
         self.assertEqual(m.data(m.index(0, COL_STATUS), Qt.ItemDataRole.DisplayRole),
                          MatchStatus.NOT_SEARCHED.label)
-        self.assertEqual(m.data(m.index(0, COL_BOORU), Qt.ItemDataRole.DisplayRole), "")
-        self.assertEqual(m.data(m.index(0, COL_SIMILARITY), Qt.ItemDataRole.DisplayRole), "")
+        self.assertEqual(m.data(m.index(0, COL_BOORU), Qt.ItemDataRole.DisplayRole), "\u2014")
+        self.assertEqual(m.data(m.index(0, COL_SIMILARITY), Qt.ItemDataRole.DisplayRole), "\u2014")
 
     def test_user_tags_survive_but_booru_tags_do_not(self):
         self.win._reset_rows([self.entries[0]])
@@ -5676,10 +5676,10 @@ class TestReviewedColumn(GuiTestCase):
         from gui.image_table_model import COLUMNS, COL_REVIEWED
         self.assertEqual(COLUMNS[COL_REVIEWED], "Reviewed")
 
-    def test_only_reviewed_rows_are_ticked(self):
-        self.assertEqual(self._cell(0), "")
-        self.assertEqual(self._cell(1), "✓")
-        self.assertEqual(self._cell(2), "")
+    def test_only_reviewed_rows_are_marked(self):
+        self.assertEqual(self._cell(0), "\u2014")
+        self.assertEqual(self._cell(1), "\u25cf")
+        self.assertEqual(self._cell(2), "\u2014")
 
     def test_a_ticked_cell_explains_itself(self):
         from PyQt6.QtCore import Qt

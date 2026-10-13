@@ -28,7 +28,7 @@ from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PyQt6.QtGui import QFont, QIcon
 
 from core.entry_filter import EntryFilter, upscale_verdict_label
-from core.image_compare import compact_size_delta, size_delta_sort_key
+from core.image_compare import SAME_SIZE_TOLERANCE, compare_sizes, size_delta_sort_key
 from core.models import ImageEntry, MatchStatus
 from core.similarity_display import (
     ESTIMATE_CHIP, similarity_label, similarity_tooltip,
@@ -46,6 +46,10 @@ CHIP_ROLE = Qt.ItemDataRole.UserRole + 10
 COL_THUMB, COL_FILE, COL_STATUS, COL_ENGINE, COL_SIMILARITY = 0, 1, 2, 3, 4
 COL_SIZE_DELTA, COL_BOORU, COL_TAGS, COL_CACHE, COL_SENT = 5, 6, 7, 8, 9
 COL_REVIEWED, COL_UPSCALE = 10, 11
+
+# What a cell shows when there is nothing to show (Q-12): "known none",
+# which a blank cell cannot tell apart from "not loaded yet".
+EMPTY_CELL = "\u2014"
 
 HEADER_TRACKING = 110  # percent: tokens.css's 0.1em on the table headers
 
@@ -94,9 +98,9 @@ _REVIEWED_TOOLTIP = (
 )
 _SIZE_DELTA_TOOLTIP = (
     "How the matched image's dimensions compare with your local file, on the long "
-    "edge. \"+ 4x\" means the match is four times the size; \"- 4x\" means it's a "
-    "quarter of it; \"=\" means they're the same. Blank when the match's size isn't "
-    "known."
+    "edge. \"\u25b2 4\u00d7\" means the match is four times the size; \"0.25\u00d7\" "
+    "means it's a quarter of it; \"=\" means they're the same. A dash when the "
+    "match's size isn't known."
 )
 _UPSCALE_NOT_CHECKED_TOOLTIP = (
     "Right-click > Check for Upscaling has not been run on this image yet."
@@ -119,47 +123,72 @@ def _upscale_glyph(entry: ImageEntry) -> str:
 def _upscale_weight(entry: ImageEntry) -> str:
     """ink_100 for flagged (a heuristic worth a look, not proof - the
     same caution the results dialog draws with a warning rather than an
-    error icon), ink_65 for clear, ink_45 for not yet checked."""
+    error icon), ink_65 for clear and for the dash of not yet checked
+    (text, so the body-text tier rather than the under-floor ink_45)."""
     if entry.upscale_verdict == "flagged":
         return "ink_100"
-    if entry.upscale_verdict == "clear":
-        return "ink_65"
-    return "ink_45"
+    return "ink_65"
+
+
+def _entry_size_scale(entry: ImageEntry) -> Optional[float]:
+    """The match's long edge over the local file's, or None when either
+    size is unknown (no match, or a site that states no dimensions)."""
+    candidate = entry.selected_candidate
+    if candidate is None:
+        return None
+    return compare_sizes(
+        entry.local_width or 0, entry.local_height or 0,
+        candidate.width or 0, candidate.height or 0,
+    ).scale
+
+
+def _scale_text(scale: float) -> str:
+    """'2.5', '0.4', '1,200': one decimal for ordinary ratios, none once the
+    integer part alone is precise enough, and never exponent form."""
+    if scale >= 100:
+        return f"{round(scale):,}"
+    if scale < 0.1:
+        return "<0.1"
+    return f"{scale:.1f}"
 
 
 def _entry_size_delta_label(entry: ImageEntry) -> str:
-    """The Size diff. cell: how the match compares with the local
-    file, always expressed relative to the local one."""
-    candidate = entry.selected_candidate
-    if candidate is None:
-        return ""
-    return compact_size_delta(
-        entry.local_width or 0, entry.local_height or 0,
-        candidate.width or 0, candidate.height or 0,
-    )
+    """The Size diff. cell (Q-11): how the match compares with the local
+    file, always relative to the local one. '2.5\u00d7' bigger, '0.4\u00d7'
+    smaller, '=' the same, a dash when it cannot be told. The '\u25b2' that
+    marks an upgrade is _size_delta_glyph's, added in the cell text."""
+    scale = _entry_size_scale(entry)
+    if scale is None:
+        return EMPTY_CELL
+    if abs(scale - 1.0) <= SAME_SIZE_TOLERANCE:
+        return "="
+    return f"{_scale_text(scale)}\u00d7"
 
 
 def _size_delta_glyph(entry: ImageEntry) -> str:
-    """'▲' for an upgrade - the same "a bigger/better version exists"
+    """'\u25b2' for an upgrade - the same "a bigger/better version exists"
     shape the Upscale column's flagged case uses. '=' and a downgrade
-    draw no glyph: compact_size_delta's own "+"/"-" prefix already puts
-    the direction in the label text, so there is no missing shape
-    channel there for a glyph to replace - only the weight tier below
-    changes."""
-    if _entry_size_delta_label(entry).startswith("+"):
-        return "▲"
+    draw no glyph: the ratio itself already puts the direction in the
+    label (below or above 1), so there is no missing shape channel there
+    for a glyph to replace - only the weight tier below changes."""
+    scale = _entry_size_scale(entry)
+    if scale is not None and scale > 1.0 + SAME_SIZE_TOLERANCE:
+        return "\u25b2"
     return ""
 
 
 def _size_delta_weight(entry: ImageEntry) -> str:
     """ink_100 for an upgrade (worth a look), ink_65 for a downgrade
-    (routine, not alarming), ink_45 for "=" or unmeasured (nothing to
-    act on) - the same reading the old hue tiers used, on the ink ramp
-    instead of a hue."""
-    label = _entry_size_delta_label(entry)
-    if label.startswith("+"):
+    (routine, not alarming), ink_45 for "=" (nothing to act on) and
+    ink_65 for the dash of an unknown size (the body-text tier, because
+    ink_45 is under the 4.5:1 floor for text) - the same reading the old
+    hue tiers used, on the ink ramp instead of a hue."""
+    scale = _entry_size_scale(entry)
+    if scale is None:
+        return "ink_65"
+    if scale > 1.0 + SAME_SIZE_TOLERANCE:
         return "ink_100"
-    if label.startswith("-"):
+    if scale < 1.0 - SAME_SIZE_TOLERANCE:
         return "ink_65"
     return "ink_45"
 
@@ -182,6 +211,10 @@ def _is_interrupted(entry: ImageEntry) -> bool:
     Only while it is unsearched: a row with a result has moved on, and
     the note would then contradict the cell beside it."""
     return entry.interrupted_mid_search and entry.status == MatchStatus.NOT_SEARCHED
+
+
+# The columns whose empty state reads as EMPTY_CELL (Q-12).
+_DASHED_COLUMNS = (COL_ENGINE, COL_SIMILARITY, COL_BOORU, COL_CACHE, COL_SENT, COL_REVIEWED)
 
 
 def _entry_cache_label(entry: ImageEntry) -> str:
@@ -342,30 +375,31 @@ class ImageTableModel(QAbstractTableModel):
             return entry.status.label
         if col == COL_ENGINE:
             return _entry_engine_label(entry) or (
-                INTERRUPTED_MARKER if _is_interrupted(entry) else "")
+                INTERRUPTED_MARKER if _is_interrupted(entry) else EMPTY_CELL)
         if col == COL_SIMILARITY:
-            return similarity_label(entry.similarity, entry.similarity_measured)
+            return similarity_label(entry.similarity, entry.similarity_measured) or EMPTY_CELL
         if col == COL_SIZE_DELTA:
             label = _entry_size_delta_label(entry)
             glyph = _size_delta_glyph(entry)
             return f"{glyph} {label}" if glyph else label
         if col == COL_BOORU:
-            return entry.booru_name or ""
+            return entry.booru_name or EMPTY_CELL
         if col == COL_TAGS:
             return str(len(entry.tags))
         if col == COL_CACHE:
-            return _entry_cache_label(entry)
+            return _entry_cache_label(entry) or EMPTY_CELL
         if col == COL_SENT:
-            return _entry_sent_label(entry)
+            return _entry_sent_label(entry) or EMPTY_CELL
         if col == COL_REVIEWED:
-            # A tick rather than the word: the column is read by the
+            # A mark rather than the word: the column is read by the
             # dozen down a long list, where a mark either is or isn't
             # there reads faster than a word to be checked against a
-            # header.
-            return "\u2713" if entry.reviewed else ""
+            # header. The same glyph the Sent chip draws (Q-13), because
+            # both mean "done with" - see _chip.
+            return "\u25cf" if entry.reviewed else EMPTY_CELL
         if col == COL_UPSCALE:
             if not entry.upscale_verdict:
-                return ""
+                return EMPTY_CELL
             label = upscale_verdict_label(entry)
             glyph = _upscale_glyph(entry)
             return f"{glyph} {label}" if glyph else label
@@ -382,6 +416,8 @@ class ImageTableModel(QAbstractTableModel):
             return entry.status.value
         if col == COL_SENT and entry.sent_to_hydrus:
             return "sent" if entry.hydrus_import_confirmed else "queued"
+        if col == COL_REVIEWED and entry.reviewed:
+            return "reviewed"
         if col == COL_SIMILARITY and entry.similarity is not None \
                 and not entry.similarity_measured:
             # Only the unmeasured ones are chipped, the way only a SENT
@@ -413,6 +449,10 @@ class ImageTableModel(QAbstractTableModel):
             # The same routine-not-alarming tier a confirmed send uses:
             # both mean the row is finished with, and they should read
             # as one state.
+            return theme.ink_color(mode, "ink_65")
+        if col in _DASHED_COLUMNS and self._display(entry, col) == EMPTY_CELL:
+            # A placeholder is text, so it sits on the body-text tier that
+            # clears 4.5:1; the mockup's ink_45 does not (DAN-211).
             return theme.ink_color(mode, "ink_65")
         if col == COL_SIZE_DELTA:
             return theme.ink_color(mode, _size_delta_weight(entry))

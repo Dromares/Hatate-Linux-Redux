@@ -261,7 +261,7 @@ class TestTheTableColumnSaysIt(unittest.TestCase):
         entry = ImageEntry(path="/tmp/a.png")
         self.entries.append(entry)
         self.model.refresh_all()
-        self.assertEqual(self._cell(Qt.ItemDataRole.DisplayRole), "")
+        self.assertEqual(self._cell(Qt.ItemDataRole.DisplayRole), "\u2014")
         self.assertIsNone(self._cell(CHIP_ROLE))
 
     def test_the_tooltip_explains_the_mark(self):
@@ -285,3 +285,53 @@ class TestTheTableColumnSaysIt(unittest.TestCase):
         CHIP_LABELS."""
         from gui import theme
         self.assertEqual(theme.chip_label(ESTIMATE_CHIP, "~80%"), "~80%")
+
+
+class TestRealEnginesAreNotMarkedEstimated(unittest.TestCase):
+    """Q-10: a SauceNAO/IQDB score is a real measurement and must not draw '~'.
+
+    Drives the real collectors (network edge stubbed) rather than building a
+    MatchCandidate with similarity_measured=True, which is the shortcut the
+    classes above take and which hid this: the collectors never set the flag
+    (only the local re-measure does, and it skips these two engines), so every
+    IQDB/SauceNAO row read as an estimate.
+    """
+
+    def _collect(self):
+        from unittest import mock
+
+        from core import engine_runner, iqdb, saucenao
+        from core.config import Settings
+
+        entry, cands, errs = ImageEntry(path="/tmp/x.png"), [], []
+        iq = [iqdb.IqdbMatch(url="https://danbooru.donmai.us/posts/1", thumb_url=None, similarity=96.0,
+                             width=1, height=1, source_name="Danbooru", is_best_match=True,
+                             unnamespaced_tags=[])]
+        sn = [saucenao.SauceNaoMatch(url="https://danbooru.donmai.us/posts/2", similarity=96.0,
+                                     title=None, source_name="Danbooru")]
+        with mock.patch.object(iqdb, "search", return_value=iq), \
+                mock.patch.object(saucenao, "search", return_value=sn):
+            engine_runner._collect_iqdb(entry, Settings(), cands, errs, None, False)
+            engine_runner._collect_saucenao(entry, Settings(), cands, errs, None)
+        self.assertEqual(errs, [])
+        self.assertEqual({c.engine for c in cands}, {"IQDB", "SauceNAO"})
+        return cands
+
+    def test_a_collected_score_reads_as_measured(self):
+        for c in self._collect():
+            with self.subTest(engine=c.engine):
+                self.assertTrue(c.score_is_measured)
+                self.assertEqual(similarity_label(c.similarity, c.score_is_measured), "96%")
+
+    def test_the_selected_entry_carries_it_to_the_table(self):
+        for c in self._collect():
+            with self.subTest(engine=c.engine):
+                entry = ImageEntry(path="/tmp/x.png", candidates=[c])
+                entry.select_candidate(0)
+                self.assertTrue(entry.similarity_measured)
+                self.assertEqual(similarity_label(entry.similarity, entry.similarity_measured), "96%")
+
+    def test_an_ordinal_engine_still_reads_as_an_estimate(self):
+        c = _ordinal()
+        self.assertFalse(c.score_is_measured)
+        self.assertTrue(similarity_label(c.similarity, c.score_is_measured).startswith("~"))

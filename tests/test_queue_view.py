@@ -14,8 +14,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from tests import _path  # noqa: F401  (puts the project root on sys.path)
 from tests._qt_app import ensure_app
 
+from PyQt6.QtCore import QRect, QRectF, Qt
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter, QPalette
+from PyQt6.QtWidgets import QStyle, QStyleOptionViewItem
 
-from core.models import ImageEntry, MatchStatus
+from core.models import ImageEntry, MatchCandidate, MatchStatus
 from gui import theme
 from tests.test_gui_smoke import GuiTestCase
 
@@ -273,6 +276,199 @@ class TestQueueTableChrome(GuiTestCase):
                 fill = pal.color(QPalette.ColorRole.Highlight).name()
                 text = pal.color(QPalette.ColorRole.HighlightedText).name()
                 self.assertGreaterEqual(_contrast(text, fill), 4.5)
+
+
+class _SpyPainter(QPainter):
+    """A real painter that also records the fonts it was given and the
+    rectangles it was asked to outline, so a paint test can assert on what
+    the delegate decided without reading pixels back."""
+
+    def __init__(self, device):
+        super().__init__(device)
+        self.fonts = []
+        self.rects = []     # (QRectF, pen colour name)
+
+    def setFont(self, font):
+        self.fonts.append(QFont(font))
+        super().setFont(font)
+
+    def drawRect(self, rect):
+        self.rects.append((QRectF(rect), self.pen().color().name()))
+        super().drawRect(rect)
+
+
+def _over(fg, bg):
+    """'#rrggbb' of an alpha QColor composited on an opaque '#rrggbb'."""
+    a = fg.alphaF()
+    base = [int(bg[i:i + 2], 16) for i in (1, 3, 5)]
+    mix = [round(c * a + b * (1 - a)) for c, b in zip((fg.red(), fg.green(), fg.blue()), base, strict=True)]
+    return "#%02x%02x%02x" % tuple(mix)
+
+
+class TestQueueCellContent(GuiTestCase):
+    """DAN-1172 (P5, rows Q-08..Q-13): what the Queue cells say and how the
+    status chips are drawn."""
+
+    CELL_W, CELL_H = 160, 49
+
+    @classmethod
+    def setUpClass(cls):
+        _app()
+
+    def _window(self, entries, mode="dark"):
+        from core.config import Settings
+        from tests.test_gui_harness import make_themed_window
+        with mock.patch("gui.main_window.Settings.load", return_value=Settings()):
+            _app_, win = make_themed_window(self, mode)
+        # The delegate and the model read the mode from here, not from the
+        # stylesheet, so a light-mode paint needs the setting to say so.
+        win.settings.theme = mode
+        win.resize(1440, 900)
+        win.entries.extend(entries)
+        win.table_model.refresh_all(win.entries)
+        win.show()
+        self.addCleanup(win.close)
+        _app().processEvents()
+        return win
+
+    @staticmethod
+    def _matched(local, remote, **kw):
+        entry = ImageEntry(path="/tmp/cell.png", status=MatchStatus.GOOD, **kw)
+        entry.local_width, entry.local_height = local
+        entry.candidates = [MatchCandidate(
+            url="https://danbooru.donmai.us/posts/1", similarity=90.0, engine="SauceNAO",
+            width=remote[0], height=remote[1])]
+        entry.select_candidate(0)
+        return entry
+
+    def _text(self, win, row, col, role=Qt.ItemDataRole.DisplayRole):
+        return win.table_model.data(win.table_model.index(row, col), role)
+
+    def _paint(self, win, row, col, selected=False):
+        """Paint one cell through its real delegate; returns (spy, image)."""
+        index = win.table_model.index(row, col)
+        option = QStyleOptionViewItem()
+        option.rect = QRect(0, 0, self.CELL_W, self.CELL_H)
+        option.widget = win.table
+        option.font = win.table.font()
+        option.palette = win.table.palette()
+        option.state = QStyle.StateFlag.State_Enabled
+        if selected:
+            option.state |= QStyle.StateFlag.State_Selected
+        image = QImage(self.CELL_W, self.CELL_H, QImage.Format.Format_ARGB32)
+        image.fill(QColor(win.table.palette().color(QPalette.ColorRole.Base)))
+        spy = _SpyPainter(image)
+        win.table.itemDelegateForColumn(col).paint(spy, option, index)
+        spy.end()
+        return spy, image
+
+    # -- Q-11 ----------------------------------------------------------
+
+    def test_size_ratio_reads_triangle_ratio_times(self):
+        from gui.image_table_model import COL_SIZE_DELTA
+        win = self._window([
+            self._matched((1000, 1500), (2500, 3750)),   # 2.5x bigger
+            self._matched((1000, 1500), (400, 600)),     # 0.4x
+            self._matched((1000, 1500), (1000, 1500)),   # same
+            self._matched((1000, 1500), (0, 0)),         # site states no size
+            ImageEntry(path="/tmp/none.png"),            # no match at all
+        ])
+        got = [self._text(win, r, COL_SIZE_DELTA) for r in range(5)]
+        self.assertEqual(got, ["\u25b2 2.5\u00d7", "0.4\u00d7", "=", "\u2014", "\u2014"])
+
+    # -- Q-12 ----------------------------------------------------------
+
+    def test_every_empty_cell_is_a_dash(self):
+        from gui import image_table_model as m
+        win = self._window([ImageEntry(path="/tmp/empty.png")])
+        for col in (m.COL_ENGINE, m.COL_SIMILARITY, m.COL_SIZE_DELTA, m.COL_BOORU,
+                    m.COL_CACHE, m.COL_SENT, m.COL_REVIEWED, m.COL_UPSCALE):
+            with self.subTest(column=m.COLUMNS[col]):
+                self.assertEqual(self._text(win, 0, col), "\u2014")
+        # A count of zero is a fact, not an absence: it stays a number.
+        self.assertEqual(self._text(win, 0, m.COL_TAGS), "0")
+
+    def test_the_dash_clears_the_body_text_contrast_floor(self):
+        from gui import image_table_model as m
+        for mode in ("dark", "light"):
+            win = self._window([ImageEntry(path="/tmp/empty.png")], mode)
+            card = theme.palette(mode)["card"]
+            for col in (m.COL_ENGINE, m.COL_SIMILARITY, m.COL_SIZE_DELTA, m.COL_BOORU,
+                        m.COL_CACHE, m.COL_SENT, m.COL_REVIEWED, m.COL_UPSCALE):
+                with self.subTest(mode=mode, column=m.COLUMNS[col]):
+                    brush = self._text(win, 0, col, Qt.ItemDataRole.ForegroundRole)
+                    self.assertIsNotNone(brush)
+                    self.assertGreaterEqual(_contrast(_over(brush, card), card), 4.5)
+
+    # -- Q-13 ----------------------------------------------------------
+
+    def test_reviewed_shows_the_same_dot_sent_does(self):
+        from gui import image_table_model as m
+        sent = ImageEntry(path="/tmp/s.png", sent_to_hydrus=True, hydrus_import_confirmed=True)
+        reviewed = ImageEntry(path="/tmp/r.png", reviewed=True)
+        win = self._window([sent, reviewed])
+        self.assertEqual(self._text(win, 1, m.COL_REVIEWED), "\u25cf")
+        sent_key = self._text(win, 0, m.COL_SENT, m.CHIP_ROLE)
+        reviewed_key = self._text(win, 1, m.COL_REVIEWED, m.CHIP_ROLE)
+        self.assertEqual(theme.status_glyph(reviewed_key), theme.status_glyph(sent_key))
+        self.assertEqual(theme.status_glyph(reviewed_key), "\u25cf")
+        self.assertIsNone(self._text(win, 0, m.COL_REVIEWED, m.CHIP_ROLE))
+
+    def test_the_reviewed_dot_is_painted_by_the_chip_delegate(self):
+        from gui import image_table_model as m
+        win = self._window([ImageEntry(path="/tmp/r.png", reviewed=True)])
+        spy, _image = self._paint(win, 0, m.COL_REVIEWED)
+        self.assertTrue(spy.fonts, "nothing was drawn for a reviewed row")
+
+    # -- Q-08 ----------------------------------------------------------
+
+    def test_status_label_is_mono_11px_and_its_glyph_13px(self):
+        from gui import image_table_model as m
+        win = self._window([ImageEntry(path="/tmp/g.png", status=MatchStatus.GOOD)])
+        spy, _image = self._paint(win, 0, m.COL_STATUS)
+        sizes = [f.pixelSize() for f in spy.fonts]
+        self.assertIn(11, sizes, "the status label is not 11px")
+        self.assertIn(13, sizes, "the status glyph is not 13px")
+        label_font = next(f for f in spy.fonts if f.pixelSize() == 11)
+        self.assertEqual(label_font.families()[0], "JetBrains Mono")
+
+    # -- Q-09 ----------------------------------------------------------
+
+    def test_error_is_boxed_and_no_other_status_is(self):
+        from gui import image_table_model as m
+        win = self._window([ImageEntry(path="/tmp/e.png", status=status)
+                            for status in MatchStatus])
+        for row, status in enumerate(MatchStatus):
+            spy, _image = self._paint(win, row, m.COL_STATUS)
+            with self.subTest(status=status.value):
+                if status is MatchStatus.ERROR:
+                    self.assertEqual(len(spy.rects), 1, "Error has no box")
+                else:
+                    self.assertEqual(spy.rects, [])
+
+    def test_the_error_box_encloses_the_chip_and_clears_the_border_floor(self):
+        from gui import image_table_model as m
+        for mode in ("dark", "light"):
+            win = self._window([ImageEntry(path="/tmp/e.png", status=MatchStatus.ERROR)], mode)
+            spy, _image = self._paint(win, 0, m.COL_STATUS)
+            (box, border), = spy.rects
+            with self.subTest(mode=mode):
+                cell = QRectF(0, 0, self.CELL_W, self.CELL_H)
+                self.assertTrue(cell.contains(box), "the box leaves the cell")
+                label = QFontMetrics(spy.fonts[-1]).horizontalAdvance("Error")
+                self.assertGreater(box.width(), label + 2 * 6, "the box does not wrap the label")
+                bg = theme.palette(mode)["card"]
+                self.assertGreaterEqual(
+                    _contrast(_over(theme.ink_color(mode, "ink_46"), bg), bg), 3.0)
+                self.assertEqual(border, theme.ink_color(mode, "ink_46").name())
+
+    def test_a_selected_error_box_takes_the_highlighted_text_colour(self):
+        from gui import image_table_model as m
+        win = self._window([ImageEntry(path="/tmp/e.png", status=MatchStatus.ERROR)])
+        spy, _image = self._paint(win, 0, m.COL_STATUS, selected=True)
+        (_box, border), = spy.rects
+        highlighted = win.table.palette().color(QPalette.ColorRole.HighlightedText).name()
+        self.assertEqual(border, highlighted)
 
 
 def _contrast(fg, bg):

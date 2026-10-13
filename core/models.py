@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional
 
+from .engines import reports_real_similarity
+
 
 class TagSource(Enum):
     """Where a tag came from, mirrors Hatate's original source list."""
@@ -125,6 +127,18 @@ class MatchCandidate:
                                                       # verdict can age out rather than stand forever.
                                                       # Set iff remote_available is definite - see
                                                       # record_availability, which writes both together
+
+    @property
+    def score_is_measured(self) -> bool:
+        """Whether `similarity` is a real comparison, for display.
+
+        similarity_measured is only ever set True by the local re-measure, which
+        skips IQDB/SauceNAO because their own score is already a measurement; so
+        the flag alone reads False for them and every surface would mark their
+        score as an estimate. The engine is the second half of the answer, as it
+        is for the run-time gates.
+        """
+        return self.similarity_measured or reports_real_similarity(self.engine)
 
     def record_availability(self, available: Optional[bool]) -> None:
         """Stores an availability verdict together with when it was reached.
@@ -277,7 +291,7 @@ class ImageEntry:
         self.matched_thumb_bytes = c.thumb_bytes
         self.booru_name = c.source_name
         self.similarity = c.similarity
-        self.similarity_measured = c.similarity_measured
+        self.similarity_measured = c.score_is_measured
         self.match_width = c.width
         self.match_height = c.height
         self.add_tags(c.engine_tags, replace_source=TagSource.SEARCH_ENGINE)
