@@ -5145,12 +5145,16 @@ class TestModeStackSizeFloor(GuiTestCase):
         """The stack maxes over pages in each axis independently - width
         from Activity, height from Review - so a test that only checked
         one axis would miss half of the bug."""
-        activity_hint = self.win._mode_pages["activity"].minimumSizeHint()
+        # Activity's engine chips wrap now (DAN-1173), so its natural width
+        # is under Queue's; force it wide to keep the width axis meaningful.
+        wide = 1900
+        self.win._mode_pages["activity"].setMinimumWidth(wide)
+        QApplication.processEvents()
         review_hint = self.win._mode_pages["review"].minimumSizeHint()
 
         floor = self.win.minimumSize()
         self.assertLess(
-            floor.width(), activity_hint.width(),
+            floor.width(), wide,
             "window's width floor still tracks Activity's hidden page",
         )
         self.assertLess(

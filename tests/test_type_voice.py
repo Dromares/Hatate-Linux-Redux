@@ -1,5 +1,6 @@
 """The mockup's type voice (DAN-1161, gap rows G-01, G-02, G-03, G-04, G-10,
-V-08, E-04, Y-04 casing, Q-01 casing).
+V-08, E-04, Y-04 casing, Q-01 casing) and the Activity restyle (DAN-1173: Y-02,
+Y-05, Y-07, U1).
 
 Page-level controls are mono, UPPERCASE and tracked; the wordmark is the
 kanji 鏡 beside HATATE; the gear is a 36px box; screen titles are 36px.
@@ -18,7 +19,7 @@ from tests import _path  # noqa: F401  (puts the project root on sys.path)
 from tests._qt_app import ensure_app
 
 from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import QLabel, QPushButton, QToolButton
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QToolButton
 
 from core.config import Settings
 from gui import shell, theme, widgets
@@ -207,15 +208,93 @@ class _TitleChecks:
 
     def test_titles_are_source_serif_36px(self):
         titles = self.win.findChildren(QLabel, "ScreenTitle")
-        self.assertEqual(sorted(t.text() for t in titles), ["Queue.", "Review."])
+        self.assertEqual(sorted(t.text() for t in titles), ["Activity.", "Queue.", "Review."])
         for title in titles:
             font = _font(title)
             self.assertEqual(font.family(), "Source Serif 4")
             self.assertEqual(font.pixelSize(), 36)
 
 
+class _ActivityChecks:
+    """Y-02, Y-05, Y-07, U1 (DAN-1173)"""
+
+    def test_engine_chips_are_uppercase_mono_and_keep_their_sentence_case_text(self):
+        self.win.set_mode("activity")
+        chips = [self.win.engine_chip_row.itemAt(i).widget()
+                 for i in range(self.win.engine_chip_row.count())]
+        chips = [c for c in chips if c is not None]
+        # B-9: the three chips added after the mockup stay.
+        self.assertEqual(len(chips), 10)
+        for chip in chips:
+            with self.subTest(chip=chip.text()):
+                self.assertTrue(_is_caps_mono(chip), _font(chip).toString())
+                self.assertEqual(_font(chip).pixelSize(), 11)
+        self.assertEqual(chips[0].text(), "IQDB · primary")
+
+    def test_chips_wrap_instead_of_widening_the_window(self):
+        self.win.set_mode("activity")
+        page = self.win.mode_stack.currentWidget()
+        # Ten mono-caps chips in one row ask for ~1380px; they have to wrap
+        # (the mockup's `flex-wrap`) so the page still fits a 1440 window.
+        self.assertLessEqual(
+            page.minimumSizeHint().width(), 1440 - 2 * widgets.PAGE_GUTTER)
+        row = self.win.engine_chip_row
+        QApplication.processEvents()   # the rebuilt chips are shown on the next turn
+        self.assertGreater(row.heightForWidth(300), row.heightForWidth(5000))
+
+    def test_log_toolbar_is_three_boxed_36px_buttons(self):
+        self.win.set_mode("activity")
+        buttons = [self.win.log_follow_btn] + [
+            b for b in self.win.findChildren(QPushButton, "IconButton")
+            if b.toolTip() in ("Copy the whole log.",
+                               "Open the folder the log file is in.")]
+        self.assertEqual([b.text() for b in buttons], ["↻", "⧉", "⤢"])
+        for button in buttons:
+            with self.subTest(button=button.text()):
+                self.assertTrue(button.property("boxed"))
+                self.assertEqual((button.width(), button.height()), (36, 36))
+                # Sample beside the glyph, not through it: the centre pixel
+                # can land on a stroke of the border's own ink colour.
+                img = button.grab().toImage()
+                for y in (9, 18, 27):
+                    self.assertNotEqual(
+                        img.pixelColor(0, y).rgb(), img.pixelColor(4, y).rgb(),
+                        f"no hairline box at y={y}")
+
+    def test_log_toolbar_sits_right_of_the_section_rule(self):
+        self.win.set_mode("activity")
+        follow = self.win.log_follow_btn
+        rule = follow.parentWidget().findChildren(
+            widgets.QFrame, "SectionRule")[-1]
+        self.assertLess(rule.geometry().right(), follow.geometry().left())
+
+    def test_log_footer_is_10px_mono(self):
+        self.win.set_mode("activity")
+        footer = self.win.log_footer
+        self.assertTrue(footer.text().startswith("Writing to "))
+        font = _font(footer)
+        self.assertEqual(font.family(), "JetBrains Mono")
+        self.assertEqual(font.pixelSize(), 10)
+
+    def test_activity_has_a_title_in_queues_slot(self):  # U1
+        self.win.set_mode("activity")
+        title = self.win.activity_title
+        self.assertEqual(title.text(), "Activity.")
+        self.assertTrue(title.isVisible())
+        # Same distance from the section below as Queue's title has from its
+        # body: its own 4px margin plus the body gap.
+        card = self.win.engine_pipeline.parentWidget()
+        while card.parentWidget() is not title.parentWidget():
+            card = card.parentWidget()
+        gap = card.geometry().top() - title.geometry().bottom() - 1
+        self.assertEqual(gap, widgets.SCREEN_TITLE_GAP + widgets.QUEUE_BODY_GAP)
+        # ...and the title is the first thing on the page, as on Queue.
+        self.assertLess(title.geometry().top(), card.geometry().top())
+
+
 class _AllChecks(
     _PerModeWindow, _WordmarkChecks, _UppercaseChecks, _GearChecks, _TitleChecks,
+    _ActivityChecks,
 ):
     pass
 

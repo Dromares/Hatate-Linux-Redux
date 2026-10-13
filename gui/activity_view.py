@@ -44,6 +44,14 @@ class ActivityViewMixin:
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(widgets.PAGE_SPACING)
 
+        # U1: the title sits where Queue's and Review's do, and clears the
+        # first section by what Queue's does (the title's own 4px margin plus
+        # the body gap) - less the page spacing the layout adds by itself.
+        self.activity_title = widgets.screen_title("Activity.")
+        layout.addWidget(self.activity_title)
+        layout.addSpacing(
+            widgets.SCREEN_TITLE_GAP + widgets.QUEUE_BODY_GAP - widgets.PAGE_SPACING)
+
         layout.addWidget(self._build_engines_card())
         layout.addWidget(self._build_log_card(), 1)
 
@@ -64,8 +72,7 @@ class ActivityViewMixin:
         self.engine_pipeline.setWordWrap(True)
         layout.addWidget(self.engine_pipeline)
 
-        self.engine_chip_row = QHBoxLayout()
-        self.engine_chip_row.setSpacing(8)
+        self.engine_chip_row = widgets.FlowLayout()
         layout.addLayout(self.engine_chip_row)
 
         self.engine_summary = widgets.hint("")
@@ -140,7 +147,6 @@ class ActivityViewMixin:
                 "Switched off in Settings > Engine."
             )
             row.addWidget(chip)
-        row.addStretch(1)
 
         # Update the pipeline summary
         self.engine_pipeline.setText(f"Pipeline: {pipeline_summary(self.settings)}")
@@ -162,17 +168,21 @@ class ActivityViewMixin:
         card, layout = widgets.card(framed=False)
         layout.setContentsMargins(0, 0, 0, 0)
 
+        # Y-05: the toolbar is three boxed 36px buttons, the mockup's
+        # `.btn--icon` row (↻ ⧉ ⤢), right of the section rule.
         self.log_follow_btn = widgets.icon_button(
-            "⟳", "Keep the log up to date while this page is open.",
-            self._on_follow_toggled, checkable=True,
+            "↻", "Keep the log up to date while this page is open.",
+            self._on_follow_toggled, checkable=True, boxed=True,
         )
         self.log_follow_btn.setChecked(True)
         layout.addLayout(widgets.section_header(
             "02 // Log",
             self.log_follow_btn,
-            widgets.icon_button("⧉", "Copy the whole log.", self._copy_log),
             widgets.icon_button(
-                "↗", "Open the folder the log file is in.", self._open_log_folder),
+                "⧉", "Copy the whole log.", self._copy_log, boxed=True),
+            widgets.icon_button(
+                "⤢", "Open the folder the log file is in.", self._open_log_folder,
+                boxed=True),
         ))
 
         self.log_view = QPlainTextEdit()
@@ -181,7 +191,10 @@ class ActivityViewMixin:
         self.log_view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         layout.addWidget(self.log_view, 1)
 
-        layout.addWidget(widgets.muted(f"Writing to {get_log_file_path()}"))
+        footer = widgets.muted(f"Writing to {get_log_file_path()}")
+        footer.setObjectName("LogFooter")   # Y-07: 10px mono, dim
+        self.log_footer = footer
+        layout.addWidget(footer)
         self._tail_log()
         return card
 

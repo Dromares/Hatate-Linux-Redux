@@ -561,6 +561,15 @@ def stylesheet(mode):
             color: {ink_65};
             background: transparent;
     }}
+    /* The Activity log's "Writing to <path>" line (Y-07): the mockup's
+       `.log-footer`, 10px mono. ink_65 rather than its ink_45 - the
+       readable-text floor in tests/test_theme.py. */
+    QLabel#LogFooter {{
+            font-family: {font_mono};
+            font-size: 10px;
+            color: {ink_65};
+            background: transparent;
+    }}
     QLabel#CommitCaption {{
             font-family: {font_mono};
             font-size: 10px;
@@ -655,12 +664,14 @@ def stylesheet(mode):
     QLabel#EngineChipOn {{
             background: transparent; color: {ink_100};
             border: 1px solid {ink_46};
-            padding: 2px 10px; font-size: 12px;
+            font-family: {font_mono};
+            padding: 2px 10px; font-size: 11px;
     }}
     QLabel#EngineChipOff {{
             background: transparent; color: {ink_65};
             border: 1px solid {ink_18};
-            padding: 2px 10px; font-size: 12px;
+            font-family: {font_mono};
+            padding: 2px 10px; font-size: 11px;
     }}
 
     /* ---- inputs ---- */
