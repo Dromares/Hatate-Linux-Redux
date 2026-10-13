@@ -1210,13 +1210,13 @@ class TestFilterLabelText(GuiTestCase):
 
     def test_nothing_chosen_reads_as_all(self):
         from gui.filter_bar import summarise_selection
-        self.assertEqual(summarise_selection("Status", None, {"a", "b"}), "Status: all")
+        self.assertEqual(summarise_selection("Status", None, {"a", "b"}), "Status: All")
 
     def test_everything_ticked_also_reads_as_all(self):
         """Saying "2 selected" when both are ticked would suggest a filter
         is doing something when it is not."""
         from gui.filter_bar import summarise_selection
-        self.assertEqual(summarise_selection("Site", {"a", "b"}, {"a", "b"}), "Site: all")
+        self.assertEqual(summarise_selection("Site", {"a", "b"}, {"a", "b"}), "Site: All")
 
     def test_one_choice_is_named(self):
         from gui.filter_bar import summarise_selection
@@ -3714,7 +3714,7 @@ class TestFilteredRowsAreNeverActedOnByAccident(GuiTestCase):
         reads "all" and the hidden-row count goes away."""
         self.win.filter_bar._set_all_sites(True)
         self.assertIsNone(self.win.filter_bar._sites)
-        self.assertEqual(self.win.filter_bar.filter_site_button.text(), "Site: all")
+        self.assertEqual(self.win.filter_bar.filter_site_button.text(), "Site: All")
 
     def test_none_then_ticking_one_isolates_it(self):
         """The reason None exists - the quick way to isolate one value."""

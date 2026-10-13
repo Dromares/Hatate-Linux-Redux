@@ -41,7 +41,7 @@ def set_all_checked(actions, checked: bool) -> None:
 
 
 def summarise_selection(prefix: str, chosen: Optional[Iterable], present: Iterable) -> str:
-    """The text for a filter button: "Status: all", "Site: Danbooru",
+    """The text for a filter button: "Status: All", "Site: Danbooru",
     "Status: 3 selected".
 
     `chosen` of None means "not filtering", and so does a chosen set that
@@ -51,7 +51,7 @@ def summarise_selection(prefix: str, chosen: Optional[Iterable], present: Iterab
     """
     present = set(present)
     if chosen is None or set(chosen) >= present:
-        return f"{prefix}: all"
+        return f"{prefix}: All"
     chosen = set(chosen)
     if len(chosen) == 1:
         return f"{prefix}: {next(iter(chosen))}"
@@ -111,7 +111,7 @@ class FilterBar(QFrame):
         # rather than combo boxes - a combo would force one-at-a-time, and
         # "show me everything that failed OR errored" is the common ask.
         self.filter_status_button = QToolButton()
-        self.filter_status_button.setText("Status: all")
+        self.filter_status_button.setText("Status: All")
         self.filter_status_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.filter_status_menu = QMenu(self.filter_status_button)
         self.filter_status_button.setMenu(self.filter_status_menu)
@@ -123,7 +123,7 @@ class FilterBar(QFrame):
         layout.addWidget(self.filter_status_button)
 
         self.filter_site_button = QToolButton()
-        self.filter_site_button.setText("Site: all")
+        self.filter_site_button.setText("Site: All")
         self.filter_site_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.filter_site_menu = QMenu(self.filter_site_button)
         self.filter_site_button.setMenu(self.filter_site_menu)
@@ -137,7 +137,7 @@ class FilterBar(QFrame):
         layout.addWidget(self.filter_site_button)
 
         self.filter_upscale_button = QToolButton()
-        self.filter_upscale_button.setText("Upscale: all")
+        self.filter_upscale_button.setText("Upscale: All")
         self.filter_upscale_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.filter_upscale_menu = QMenu(self.filter_upscale_button)
         self.filter_upscale_button.setMenu(self.filter_upscale_menu)
