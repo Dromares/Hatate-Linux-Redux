@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 from gui import theme
 
 TRACKING_LABEL = 0.16  # transcribed from tokens.css's --tracking-label
+CHIP_TRACKING = 0.08   # activity.html `.engine-tag`'s letter-spacing
 
 # The house measurements. MUR's, kept to the number so the two
 # applications measure the same.
@@ -881,11 +882,12 @@ def chip(text='', role='EngineChipOff'):
     """An on/off tag - today, the Activity page's engine row. `role` is
     'EngineChipOn' or 'EngineChipOff' (gui/theme.py); both draw as an
     outlined hairline with no fill, told apart by ink tier and border
-    weight rather than a hue."""
+    weight rather than a hue. Uppercase by font (Y-02), so `.text()` keeps
+    the sentence-case wording it was given."""
     label = QLabel(text)
     label.setObjectName(role)
     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    apply_tracking(label)
+    uppercase_voice(label, CHIP_TRACKING)
     return label
 
 
