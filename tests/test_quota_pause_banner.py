@@ -195,10 +195,12 @@ class TestBannerVariant(_PausedWindow):
     def test_the_run_strip_puts_the_pause_note_after_the_counts(self):
         # DAN-1345 delta 4: searched · sent · note, as the mockup orders it.
         win = self._window("dark")
-        row = win.run_note_label.parentWidget().layout()
-        order = [row.itemAt(i).widget() for i in range(row.count())]
-        self.assertLess(order.index(win.run_progress_label), order.index(win.sent_count_label))
-        self.assertLess(order.index(win.sent_count_label), order.index(win.run_note_label))
+        win.show()
+        QApplication.processEvents()
+        x = lambda w: w.mapTo(win, w.rect().topLeft()).x()
+        self.assertTrue(win.run_note_label.isVisible())
+        self.assertLess(x(win.run_progress_label), x(win.sent_count_label))
+        self.assertLess(x(win.sent_count_label), x(win.run_note_label))
 
     def test_the_meta_line_gives_the_time_the_count_and_the_reset(self):
         win = self._window("dark")
