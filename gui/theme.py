@@ -570,6 +570,7 @@ def stylesheet(mode):
             background: transparent;
     }}
     QLabel#PipelineNames {{
+            font-family: {font_mono};
             font-weight: 700;
             color: {ink_100};
     }}
