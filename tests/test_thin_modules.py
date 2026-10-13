@@ -28,6 +28,7 @@ import unittest
 from unittest.mock import patch
 
 from . import _path  # noqa: F401
+from ._qt_app import ensure_app
 
 # Must be set before PyQt6 is imported, or Qt tries to reach a display.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -37,7 +38,7 @@ from core.config import Settings
 from core.models import Tag, TagSource
 
 try:
-    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtWidgets import QApplication  # noqa: F401  (availability probe)
     HAVE_QT = True
 except ImportError:  # pragma: no cover - depends on environment
     HAVE_QT = False
@@ -397,7 +398,7 @@ class TestAddTagsDialog(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls._app = QApplication.instance() or QApplication([])
+        cls._app = ensure_app()
 
     def _dialog(self, text, description="3 selected images"):
         from gui.add_tags_dialog import AddTagsDialog

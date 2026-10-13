@@ -91,8 +91,13 @@ class TestFrame(_EmptyWindow):
                 zone = self._zone(win)
                 self.assertEqual(zone.size(), win.queue_stack.size())
                 # A "full-height" frame: it runs to the bottom of the page,
-                # down to the status bar, and is most of the window.
-                bottom = zone.mapTo(win, zone.rect().bottomLeft()).y()
+                # down to the status bar, and is most of the window. The
+                # bottom *edge* is the last pixel row + 1: the mockup's 24px
+                # of `.app` padding (DAN-1360) leaves its rule on row 851,
+                # whose edge is the 852 this asserts. Comparing the row
+                # itself, as this used to, was off by one and only passed
+                # because the old 18px margin overshot.
+                bottom = zone.mapTo(win, zone.rect().bottomLeft()).y() + 1
                 self.assertGreaterEqual(
                     bottom, win.height() - win.statusBar().height() - 24)
                 self.assertGreater(zone.height() / win.height(), 0.65)

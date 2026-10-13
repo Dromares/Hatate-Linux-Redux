@@ -23,6 +23,7 @@ import unittest
 from unittest.mock import MagicMock
 
 from . import _path  # noqa: F401  (sys.path + throwaway XDG_CONFIG_HOME)
+from ._qt_app import ensure_app
 
 from PIL import Image
 
@@ -296,8 +297,7 @@ class TestTheDialogCopy(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-        from PyQt6.QtWidgets import QApplication
-        cls.app = QApplication.instance() or QApplication([])
+        cls.app = ensure_app()
 
     def _dialog(self, settings):
         from gui.settings_dialog import SettingsDialog

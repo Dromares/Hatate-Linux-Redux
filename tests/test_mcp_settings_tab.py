@@ -13,8 +13,9 @@ import unittest.mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from . import _path  # noqa: F401,E402
+from ._qt_app import ensure_app
 
-from PyQt6.QtWidgets import QApplication, QWidget  # noqa: E402
+from PyQt6.QtWidgets import QWidget  # noqa: E402
 
 from core import mcp_audit  # noqa: E402
 from core.config import Settings  # noqa: E402
@@ -29,7 +30,7 @@ _app = None
 
 def setUpModule():
     global _app
-    _app = QApplication.instance() or QApplication([])
+    _app = ensure_app()
 
 
 class _FakeHandlers:

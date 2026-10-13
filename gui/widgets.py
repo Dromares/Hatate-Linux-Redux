@@ -32,7 +32,15 @@ PAGE_MARGINS = (22, 18, 22, 18)
 # pads `var(--space-6)` left and right, and the menubar and status bar are
 # inset by the same 32. Dialogs keep PAGE_MARGINS; they are not screens.
 PAGE_GUTTER = 32
-SHELL_MARGINS = (PAGE_GUTTER, 18, PAGE_GUTTER, 18)
+# ...and the vertical half (DAN-1360): `.app` is `padding: var(--space-5)
+# var(--space-6)` with `gap: var(--space-4)`, so 24 top and bottom and 16
+# between the top bar, the run strip and the page. The 18/14 this used to
+# be sat the whole stack ~21px high of the mockup by the first content block.
+SHELL_MARGINS = (PAGE_GUTTER, 24, PAGE_GUTTER, 24)
+SHELL_SPACING = 16
+# `.queue-body { gap: var(--space-4) }`, and `.screen-title`'s 4px margin-bottom.
+QUEUE_BODY_GAP = 16
+SCREEN_TITLE_GAP = 4
 MENUBAR_HEIGHT = 28       # `.menubar`: 28px with its hairline, DAN-1158 B-1
 STATUSBAR_ITEM_INSET = 2  # what QStatusBar itself puts left of its first item
 STATUSBAR_HEIGHT = 24     # `.statusbar`: 24px with its top rule, B-2
