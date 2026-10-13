@@ -4925,10 +4925,11 @@ class TestPauseIsPersistedWhenTheBatchStops(GuiTestCase):
 
 
 @unittest.skipUnless(HAVE_QT, "PyQt6 not installed")
-class TestPausedDialogContinueButton(GuiTestCase):
-    """The "Continue with other engines" button added to the quota-pause
-    dialog (DAN-486) - wires the click to the actual resume call, same
-    pattern as the existing-files overwrite dialog's three-button test."""
+class TestPausedBannerContinueButton(GuiTestCase):
+    """The "Continue with other engines" action of the quota-pause banner
+    (DAN-486, moved from the dialog to the banner by DAN-1167 / ruling C-4):
+    the click must reach the actual resume call. That the pause raises no
+    modal is pinned in tests/test_quota_pause_banner.py."""
 
     def setUp(self):
         from gui.main_window import MainWindow
@@ -4940,39 +4941,14 @@ class TestPausedDialogContinueButton(GuiTestCase):
         self.win.entries = [unsearched]
         self.win._register_new_entries([unsearched])
 
-    def _trigger(self, choice):
-        """`choice` is "continue" or "ok" - the buttons in the order
-        _on_paused_out_of_quota adds them."""
-        from unittest.mock import MagicMock, patch
-        box = MagicMock()
-        added = []
-        box.addButton.side_effect = lambda *a, **k: added.append(MagicMock()) or added[-1]
-        box.clickedButton.side_effect = lambda: added[{"continue": 0, "ok": 1}[choice]]
-        with patch("gui.main_window.message.build", return_value=box), \
-             patch.object(self.win, "_resume_without_saucenao") as resumed:
-            self.win._on_paused_out_of_quota(1, 1)
-        return resumed
-
-    def test_clicking_continue_resumes(self):
-        resumed = self._trigger("continue")
-        resumed.assert_called_once()
-
-    def test_clicking_ok_does_not_resume(self):
-        resumed = self._trigger("ok")
-        resumed.assert_not_called()
-
     def test_continue_actually_launches_a_search_without_saucenao(self):
         """End to end through the real method, not just that it was
         called: REGRESSION target for the force flag actually reaching
         the worker."""
-        from unittest.mock import MagicMock, patch
-        box = MagicMock()
-        added = []
-        box.addButton.side_effect = lambda *a, **k: added.append(MagicMock()) or added[-1]
-        box.clickedButton.side_effect = lambda: added[0]
-        with patch("gui.main_window.message.build", return_value=box), \
-             patch.object(self.win, "_launch_search_worker") as launch:
-            self.win._on_paused_out_of_quota(1, 1)
+        from unittest.mock import patch
+        self.win._on_paused_out_of_quota(1, 1)
+        with patch.object(self.win, "_launch_search_worker") as launch:
+            self.win._quota_banner_parts['continue_button'].click()
         launch.assert_called_once()
         self.assertTrue(launch.call_args.kwargs.get("force_continue_without_saucenao"))
 

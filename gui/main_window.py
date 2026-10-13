@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from PIL import Image
 from PyQt6 import sip
 from PyQt6.QtCore import (
-    Qt, QSize, QByteArray, QItemSelection, QItemSelectionModel, QTimer, pyqtSignal,
+    Qt, QSize, QByteArray, QEvent, QItemSelection, QItemSelectionModel, QTimer, pyqtSignal,
 )
 from PyQt6.QtGui import (
     QAction, QActionGroup, QColor, QDesktopServices, QIcon, QImageReader, QPalette,
@@ -60,16 +60,20 @@ from core.viewport import entries_needing_thumbnails, visible_range_with_buffer
 from core.tag_colors import get_tag_color
 from core.tag_rules import apply_inline_edit
 from gui import theme, widgets
-from gui.shell import EMPTY_GHOST_GLYPH, IDLE_ETA, IDLE_PROGRESS, RUN_FAILED_NOTE, ShellMixin
+from gui.shell import (
+    EMPTY_GHOST_GLYPH, IDLE_ETA, IDLE_PROGRESS, QUOTA_PAUSED_ETA, QUOTA_PAUSED_NOTE,
+    RUN_FAILED_NOTE, ShellMixin,
+)
 from gui.review_view import ReviewViewMixin
 from gui.activity_view import ActivityViewMixin
-from gui.table_delegates import ChipDelegate
+from gui.table_delegates import RuledRowDelegate, ChipDelegate
 from gui.add_tags_dialog import AddTagsDialog
 # Re-exported deliberately: these define how a row renders, so they live
 # with the model, but the sort keys here (and the GUI tests) still import
 # them from this module.
 from gui.image_table_model import (  # noqa: F401
-    COLUMNS, COL_ENGINE, COL_SENT, COL_SIMILARITY, COL_STATUS, ImageTableModel, header_layout_is_usable,
+    COLUMNS, COL_ENGINE, COL_SENT, COL_SIMILARITY, COL_STATUS, COL_THUMB, ImageTableModel,
+    default_column_widths, header_layout_is_usable,
     sort_key_for_column, _entry_cache_label, _entry_engine_label,
     _entry_sent_label, _entry_size_delta_label, _size_delta_weight,
 )
@@ -108,7 +112,8 @@ log = get_logger("gui")
 # read - or filtered out - independently of everything else the GUI logs.
 lazylog = get_logger("gui.lazy_thumbs")
 
-THUMB_COLUMN_SIZE = 48  # px, for both the row icon and the row height
+THUMB_COLUMN_SIZE = 40  # px, the row icon; the row itself is QUEUE_ROW_HEIGHT
+QUEUE_ROW_HEIGHT = 49   # px, the mockup's row (Q-06): hairline included, so 48 + 1 rule
 
 # Row thumbnails are decoded at this multiple of their display size, then
 # smooth-scaled down. Asking the decoder for exactly 48px produces a
@@ -131,6 +136,7 @@ THUMB_ICON_CACHE_ENTRIES = 4000      # ~36 MB worst case
 # "the headers are missing" rather than as a layout problem.
 MIN_COLUMN_WIDTH = 24
 DEFAULT_COLUMN_WIDTH = 90
+MIN_VIEWPORT_FOR_DEFAULT_WIDTHS = 600  # narrower is a not-yet-laid-out table, not a real size
 ENGINE_COLUMN_WIDTH = 120
 
 THUMB_VIEWPORT_BUFFER_ROWS = 15
@@ -215,6 +221,38 @@ def _interrupted_prose(entries) -> str:
     return (
         "Hatate did not exit cleanly during this run. Everything up to the "
         f"last autosave is safe. {counts}."
+    )
+
+
+def _is_waiting_review(entry) -> bool:
+    """Decided and still waiting on the user: a match was found and the
+    row is neither sent nor marked reviewed."""
+    return entry.needs_review and entry.status in (MatchStatus.GOOD, MatchStatus.POOR)
+
+
+def _waiting_review_count(entries) -> int:
+    return sum(1 for e in entries if _is_waiting_review(e))
+
+
+def _quota_pause_prose(entries, remaining: int) -> str:
+    """Why the run stopped, with the counts that say nothing was lost
+    (S-03). The categories are `_interrupted_prose`'s. `remaining` is the
+    worker's own figure and stands in when there is no list to count (a
+    pause read back after a launch that did not restore the session)."""
+    why = ("Hatate stopped here on purpose, rather than finish the batch with "
+           "weaker matches from the other engines.")
+    if not entries:
+        return (f"{why} {_plural(remaining, 'image')} {'is' if remaining == 1 else 'are'} "
+                "untouched until you resume.")
+    sent = sum(1 for e in entries if e.sent_to_hydrus)
+    waiting = _waiting_review_count(entries)
+    untouched = sum(1 for e in entries if e.status == MatchStatus.NOT_SEARCHED)
+    return (
+        f"{why} {sent} of {_plural(len(entries), 'image')} "
+        f"{'is' if len(entries) == 1 else 'are'} already sent, "
+        f"{waiting} {'is' if waiting == 1 else 'are'} waiting on your review, and "
+        f"{untouched} {'is' if untouched == 1 else 'are'} untouched until you resume. "
+        "Nothing was lost."
     )
 
 
@@ -427,6 +465,8 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         # left" for a run that is no longer moving would be a lie.
         self._run_estimate = RunEstimate()
         self._run_active = False
+        # True from a quota pause until the next search starts (DAN-1167).
+        self._quota_paused = False
         # True once a run has put a count on the strip. Until then the strip
         # follows the list ("nothing queued" / "N not searched").
         self._run_counted = False
@@ -523,6 +563,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
             self.status_label.setText(f"{self._session_restore_status} · {quota_text}")
         else:
             self.status_label.setText(quota_text)
+        self._show_quota_banner(state.paused_at, state.remaining, reset_at)
 
     # ------------------------------------------------------------------
     # Menu
@@ -791,6 +832,17 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         banner_parts['discard_label'].clicked.connect(self.action_clear_session)
         card_layout.addWidget(self.run_banner)
 
+        # Hidden until a search pauses on SauceNAO's daily quota, or a pause
+        # from a previous visit is read back (DAN-1167, S-03). It replaces
+        # the modal that used to say this: an unattended run must not wait
+        # on a click, and a banner is still there on relaunch.
+        self.quota_banner, quota_parts = widgets.quota_pause_banner()
+        self.quota_banner.setVisible(False)
+        self._quota_banner_parts = quota_parts
+        quota_parts['review_button'].clicked.connect(self._review_the_waiting)
+        quota_parts['continue_button'].clicked.connect(self._resume_without_saucenao)
+        card_layout.addWidget(self.quota_banner)
+
         # The model is built before anything that reads it - the filter
         # bar sets its initial state from the model's counts, so it has to
         # exist first.
@@ -818,7 +870,17 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
         header.setSectionsMovable(True)
         header.setMinimumSectionSize(24)  # a column can be shrunk small, but never dragged to nothing
-        self.table.setColumnWidth(0, THUMB_COLUMN_SIZE + 12)
+        self.table.setColumnWidth(0, THUMB_COLUMN_SIZE + 20)
+        # The last column takes up whatever the others leave, so the
+        # default layout fills the width with no horizontal scrollbar and
+        # no dead strip after "Upscale" (Q-04). The columns before it stay
+        # Interactive: still user-resizable and movable (B-11).
+        header.setStretchLastSection(True)
+        # Q-03: UPPERCASE mono, left-aligned, like every other label in
+        # the mockup's voice. The caps come from the model (headerData's
+        # FontRole), so the section text itself stays "Size diff.".
+        header.setDefaultAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         # Lazy thumbnails follow the viewport, so anything that changes
         # WHICH rows are on screen has to trigger a re-check.
         self.table.verticalScrollBar().valueChanged.connect(
@@ -827,8 +889,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         self.table.verticalScrollBar().rangeChanged.connect(
             lambda _a, _b: self._schedule_viewport_thumbnails("scrollbar range changed")
         )
-        self.table.setColumnWidth(1, 220)  # File - give it a sensible starting width since it's no longer Stretch
-        # Wide enough for the longest chip plus its padding. At Qt's
+                # Wide enough for the longest chip plus its padding. At Qt's
         # default section width "Unsearched" elides to "Unsearc…",
         # which is the first thing a new list is full of.
         self.table.setColumnWidth(COL_STATUS, 130)
@@ -839,7 +900,12 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         # the last column leaves a 1440px window.
         self.table.setColumnWidth(COL_ENGINE, ENGINE_COLUMN_WIDTH)
         self.table.setIconSize(QSize(THUMB_COLUMN_SIZE, THUMB_COLUMN_SIZE))
-        self.table.verticalHeader().setDefaultSectionSize(THUMB_COLUMN_SIZE + 8)
+        # No row numbers (Q-05): nothing here reads a click on the
+        # vertical header, and the sort/selection state is in the rows.
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(QUEUE_ROW_HEIGHT)
+        self.table.setShowGrid(False)  # no cell lines through a selected row (Q-07)
+        self.table.setAlternatingRowColors(True)  # zebra; the tone is theme.py's
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         # QTableView has no itemSelectionChanged (that is a widget-item
@@ -855,6 +921,8 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         # Status and Sent draw as chips rather than as a filled cell. The
         # mode is read through a callable so a theme switch repaints in
         # the new palette without anything rebuilding the delegate.
+        self.table.setItemDelegate(RuledRowDelegate(
+            lambda: theme.resolve_mode(self.settings.theme), self.table))
         self._chip_delegate = ChipDelegate(
             lambda: theme.resolve_mode(self.settings.theme), self.table)
         self.table.setItemDelegateForColumn(COL_STATUS, self._chip_delegate)
@@ -865,6 +933,11 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         self.table.setItemDelegateForColumn(COL_SIMILARITY, self._chip_delegate)
 
         self._restore_table_header_state()
+        # A saved layout is the user's; without one the default widths are
+        # worked out from the viewport once it has a real size.
+        self._default_widths_pending = not self.settings.table_header_state
+        self.table.viewport().installEventFilter(self)
+        header.viewport().installEventFilter(self)
         table_layout.addWidget(self.table)
 
         # An empty list shows the drop zone instead of an empty grid.
@@ -1877,6 +1950,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         self._local_pixmap_cache.clear()
         clear_session()
         self.run_note_label.setText("")
+        self._hide_quota_banner()
         self._refresh_table()
         self._update_preview(None)
         self._refresh_tag_list(None)
@@ -2246,9 +2320,12 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         """
         done = self.progress_bar.value()
         total = self.progress_bar.maximum()
+        # A run paused on the quota is not idle and is not finishing: the
+        # estimate would be a lie either way (S-04).
+        paused_eta = QUOTA_PAUSED_ETA if self._quota_paused else IDLE_ETA
         if total <= 0 or (done <= 0 and not self._run_active):
             self.run_progress_label.setText(self._idle_run_text())
-            self.run_eta_label.setText(IDLE_ETA)
+            self.run_eta_label.setText(paused_eta)
             return
         self._run_counted = True
         self.run_progress_label.setText(f"{done:,}/{total:,} searched")
@@ -2260,7 +2337,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
                 eta += f" · {finish}"
             self.run_eta_label.setText(eta)
         else:
-            self.run_eta_label.setText(IDLE_ETA)
+            self.run_eta_label.setText(paused_eta)
 
     def _idle_run_text(self):
         """What the strip's count says when no run is under way.
@@ -2365,29 +2442,66 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
             f"Paused: SauceNAO daily quota exhausted{used} - "
             f"{searched} searched, {remaining} left unsearched"
         )
-        box = message.build(self)
-        box.setIcon(QMessageBox.Icon.Information)
-        box.setWindowTitle("SauceNAO quota exhausted")
-        box.setText(
-            f"SauceNAO's daily search allowance is spent{used}, so searching paused after "
-            f"{searched} image(s).\n\n"
-            f"The remaining {remaining} image(s) were left unsearched - press Start Search "
-            "again once the quota resets and it'll carry on from here.\n\n"
-            "Or continue right now without SauceNAO: the remaining images are searched with "
-            "the other engines, marked Provisional, and re-searchable once the allowance "
-            "resets - the same thing \"carry on without SauceNAO\" in Settings > SauceNAO "
-            "does for future runs, just for this one without reopening Settings (DAN-486)."
-        )
-        continue_btn = box.addButton(
-            "Continue with other engines", QMessageBox.ButtonRole.ActionRole)
-        box.addButton(QMessageBox.StandardButton.Ok)
-        try:
-            box.exec()
-            clicked = box.clickedButton()
-        finally:
-            box.deleteLater()
-        if clicked is continue_btn:
-            self._resume_without_saucenao()
+        # No modal (ruling C-4, DAN-1155): a batch left running overnight
+        # would otherwise sit on a dialog nobody is there to dismiss. The
+        # banner carries what the dialog said and both its actions.
+        reset_at = None
+        if state is not None:
+            try:
+                reset_at = datetime.fromisoformat(state.reset_at)
+            except ValueError:
+                pass
+        self._show_quota_banner(state.paused_at if state else time.time(), remaining, reset_at)
+
+    def _show_quota_banner(self, paused_at: float, remaining: int, reset_at: Optional[datetime]):
+        """Populates and shows the Queue page's quota-paused banner
+        (DAN-1167, S-03) and puts the pause on the run strip (S-04, R-06):
+        `paused \u2014 quota exhausted` beside the count and `ETA paused`.
+
+        The counts read the per-row state the table tracks, the way
+        `_interrupted_prose` does, so they are right after a relaunch too.
+        """
+        self._quota_paused = True
+        waiting = _waiting_review_count(self.entries)
+        self._quota_banner_parts['body'].setText(_quota_pause_prose(self.entries, remaining))
+        review = self._quota_banner_parts['review_button']
+        review.setText(f"Review the {waiting} waiting \u2192")
+        # With nothing decided yet there is nothing to review: the button
+        # would open an empty page.
+        review.setVisible(waiting > 0)
+        items = [("Quota exhausted at", time.strftime("%H:%M", time.localtime(paused_at))),
+                 ("Images waiting", f"{remaining:,}")]
+        if reset_at is not None:
+            items.append(("Resets", reset_at.astimezone(timezone.utc).strftime("%H:%M UTC")))
+        slot = self._quota_banner_parts['meta_slot']
+        while slot.count():
+            old = slot.takeAt(0).widget()
+            if old is not None:
+                old.deleteLater()
+        meta, _labels = widgets.meta_line(items, centered=False)
+        slot.addWidget(meta)
+        self.run_note_label.setText(QUOTA_PAUSED_NOTE)
+        self._refresh_run_progress_label()
+        self.quota_banner.setVisible(True)
+
+    def _hide_quota_banner(self):
+        """The pause is being acted on (or the list is gone): the banner,
+        the strip's note and `ETA paused` all describe a state that no
+        longer holds."""
+        self._quota_paused = False
+        self.quota_banner.setVisible(False)
+        if self.run_note_label.text() == QUOTA_PAUSED_NOTE:
+            self.run_note_label.setText("")
+
+    def _review_the_waiting(self):
+        """`Review the N waiting`: opens Review on the first image whose
+        match is decided and still waiting on you."""
+        for row in range(self.table_model.rowCount()):
+            entry = self.table_model.entry_at(row)
+            if entry is not None and _is_waiting_review(entry):
+                self.select_table_row(row)
+                break
+        self.set_mode("review")
 
     def _resume_without_saucenao(self):
         """'Continue with other engines' from the quota-pause dialog:
@@ -3222,6 +3336,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         # rather than helpful. If the quota is still out, pausing persists
         # a fresh one after one image, same as the flag above.
         clear_quota_pause()
+        self._hide_quota_banner()
         # Likewise forget a previous ascii2d block: the site's bot check
         # comes and goes, so a new search is the right moment to find out
         # whether it is still refusing us. Google's consent wall and
@@ -4001,6 +4116,26 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         if self._run_dialog(dialog):
             dialog.apply_to(self.settings.match_conditions)
             self.settings.save()
+
+    def eventFilter(self, obj, event):
+        """Keeps the Queue's default column widths fitted to the viewport.
+
+        Until the user touches a column divider (or a saved layout is
+        restored) the widths are a share of the viewport, re-worked on
+        every resize: the first layout is not the final size, and a
+        maximised window should not leave the table short of its edge.
+        """
+        if self._default_widths_pending:
+            if obj is self.table.horizontalHeader().viewport():
+                if event.type() == QEvent.Type.MouseButtonPress:
+                    self._default_widths_pending = False
+            elif (obj is self.table.viewport() and event.type() == QEvent.Type.Resize
+                    and event.size().width() >= MIN_VIEWPORT_FOR_DEFAULT_WIDTHS):
+                thumb_width = THUMB_COLUMN_SIZE + 20
+                self.table.setColumnWidth(COL_THUMB, thumb_width)
+                for col, width in default_column_widths(event.size().width(), thumb_width).items():
+                    self.table.setColumnWidth(col, width)
+        return super().eventFilter(obj, event)
 
     def showEvent(self, event):
         """First real layout happens here - before this the table has no
