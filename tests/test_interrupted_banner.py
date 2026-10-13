@@ -17,6 +17,7 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from tests import _path  # noqa: F401  (puts the project root on sys.path)
+from tests._qt_app import ensure_app
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -110,7 +111,7 @@ class _InterruptedWindow(GuiTestCase):
                 stopped=STOPPED_AGE, clean_exit=CLEAN_EXIT_AGE, faults=1):
         from gui import main_window as mw
         from gui.fonts import register_fonts
-        app = QApplication.instance() or QApplication([])
+        app = ensure_app()
         register_fonts()
         app.setStyleSheet(theme.stylesheet(mode))
         self.addCleanup(lambda: app.setStyleSheet(""))

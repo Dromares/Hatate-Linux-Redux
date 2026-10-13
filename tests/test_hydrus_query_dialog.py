@@ -21,13 +21,14 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from . import _path  # noqa: F401
+from ._qt_app import ensure_app
 
 # Must be set before PyQt6 is imported, or Qt tries to reach a display.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp(prefix="hatate-query-dialog-")
 
 try:
-    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtWidgets import QApplication  # noqa: F401  (availability probe)
     HAVE_QT = True
 except ImportError:  # pragma: no cover - depends on environment
     HAVE_QT = False
@@ -39,7 +40,7 @@ def setUpModule():
     """One QApplication for the whole module - Qt allows only one."""
     global _app
     if HAVE_QT:
-        _app = QApplication.instance() or QApplication([])
+        _app = ensure_app()
 
 
 def _hydrus_file(file_id, file_hash, mime="image/png", width=800, height=600, tags=None):
