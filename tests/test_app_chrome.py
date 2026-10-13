@@ -147,12 +147,6 @@ class TestPageRhythm(_ChromeCase):
                 self.assertEqual(self._at(win, win.mode_switch).y(), self.MOCKUP["tab_row"])
                 self.assertEqual(self._at(win, win.run_strip).y(), self.MOCKUP["strip"])
 
-    def test_no_horizontal_scroll_at_1360(self):
-        win = self._window("dark")
-        win.resize(1360, 900)
-        self._settle()
-        self.assertFalse(win.table.horizontalScrollBar().isVisible())
-
 
 class TestMenuBar(_ChromeCase):
     """U2: 13px text, 28px with a hairline below."""

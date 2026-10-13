@@ -296,7 +296,9 @@ def _host_from_url(url: str) -> Optional[str]:
 # pixel scan's full decode.
 PREVIEW_DECODE_SIZE = QSize(2048, 2048)
 # The empty Queue's headline sits 1 : this of the free height above : below it.
-DROP_ZONE_BELOW_WEIGHT = 4
+# 4 until DAN-1360 moved the frame's top down 21px; 6 puts the headline's
+# glyph top back at the mockup's y=345 (344 measured, 1440x900 dark).
+DROP_ZONE_BELOW_WEIGHT = 6
 
 # "Re-check Queued Imports" deliberately appears in both the Files and the
 # Hydrus menu (DAN-36). One QAction is shared between them, so this text is
