@@ -128,15 +128,15 @@ class ReviewViewMixin:
 
         header.addWidget(widgets.icon_button(
             "⧉", "Open the comparison in its own window - for a second monitor.",
-            self._pop_out_comparison,
+            self._pop_out_comparison, boxed=True,
         ))
         header.addWidget(widgets.icon_button(
             "⌨", "Show all review keyboard shortcuts.",
-            self._show_shortcuts_dialog,
+            self._show_shortcuts_dialog, boxed=True,
         ))
         header.addWidget(widgets.icon_button(
             "⮐", "Show this image in the Queue list.",
-            self.action_show_in_queue,
+            self.action_show_in_queue, boxed=True,
         ))
         layout.addLayout(header)
 
@@ -333,7 +333,7 @@ class ReviewViewMixin:
         nav.addWidget(self.review_next_match_btn)
         layout.addWidget(self.review_match_nav)
 
-        self.candidate_combo = widgets.WideComboBox()
+        self.candidate_combo = widgets.CandidatePicker()
         self.candidate_combo.setEnabled(False)
         self.candidate_combo.setSizePolicy(QSizePolicy.Policy.Expanding,
                                            QSizePolicy.Policy.Fixed)
