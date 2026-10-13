@@ -14,7 +14,7 @@ from PyQt6.QtGui import (
     QTextBlockFormat, QTextCursor, QTextDocument,
 )
 from PyQt6.QtWidgets import (
-    QButtonGroup, QComboBox, QFrame, QHBoxLayout,
+    QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLayout,
     QLabel, QLineEdit, QPushButton, QSizePolicy, QStyle, QStyleOptionComboBox, QStylePainter,
     QVBoxLayout, QWidget,
 )
@@ -122,6 +122,75 @@ def section_header(text, *trailing):
     for widget in trailing:
         row.addWidget(widget)
     return row
+
+
+class FlowLayout(QLayout):
+    """Left-to-right items that wrap onto the next line - the mockup's
+    `display: flex; flex-wrap: wrap; gap`. A QHBoxLayout asks for the sum
+    of its items' widths as a minimum, so ten mono-caps engine chips would
+    widen the whole window past 1440px; this one only asks for its widest
+    item and reports a taller height-for-width instead."""
+
+    def __init__(self, spacing=8):
+        super().__init__()
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(spacing)
+        self._items = []
+
+    def addItem(self, item):
+        self._items.append(item)
+        self.invalidate()
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index):
+        if not 0 <= index < len(self._items):
+            return None
+        self.invalidate()
+        return self._items.pop(index)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._arrange(QRect(0, 0, width, 0), apply=False)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._arrange(rect, apply=True)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        return size + QSize(margins.left() + margins.right(),
+                            margins.top() + margins.bottom())
+
+    def _arrange(self, rect, apply):
+        margins = self.contentsMargins()
+        area = rect.adjusted(margins.left(), margins.top(), -margins.right(), -margins.bottom())
+        x, y, line_height = area.x(), area.y(), 0
+        for item in self._items:
+            if item.isEmpty():   # hidden - takes no room, as in a box layout
+                continue
+            hint = item.sizeHint()
+            if x > area.x() and x + hint.width() > area.right() + 1:
+                x = area.x()
+                y += line_height + self.spacing()
+                line_height = 0
+            if apply:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x += hint.width() + self.spacing()
+            line_height = max(line_height, hint.height())
+        return y + line_height - rect.y() + margins.bottom()
 
 
 class WrappingLabel(QLabel):

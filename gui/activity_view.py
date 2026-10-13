@@ -72,8 +72,7 @@ class ActivityViewMixin:
         self.engine_pipeline.setWordWrap(True)
         layout.addWidget(self.engine_pipeline)
 
-        self.engine_chip_row = QHBoxLayout()
-        self.engine_chip_row.setSpacing(8)
+        self.engine_chip_row = widgets.FlowLayout()
         layout.addLayout(self.engine_chip_row)
 
         self.engine_summary = widgets.hint("")
@@ -148,7 +147,6 @@ class ActivityViewMixin:
                 "Switched off in Settings > Engine."
             )
             row.addWidget(chip)
-        row.addStretch(1)
 
         # Update the pipeline summary
         self.engine_pipeline.setText(f"Pipeline: {pipeline_summary(self.settings)}")

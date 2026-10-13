@@ -19,7 +19,7 @@ from tests import _path  # noqa: F401  (puts the project root on sys.path)
 from tests._qt_app import ensure_app
 
 from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import QLabel, QPushButton, QToolButton
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QToolButton
 
 from core.config import Settings
 from gui import shell, theme, widgets
@@ -230,6 +230,17 @@ class _ActivityChecks:
                 self.assertTrue(_is_caps_mono(chip), _font(chip).toString())
                 self.assertEqual(_font(chip).pixelSize(), 11)
         self.assertEqual(chips[0].text(), "IQDB · primary")
+
+    def test_chips_wrap_instead_of_widening_the_window(self):
+        self.win.set_mode("activity")
+        page = self.win.mode_stack.currentWidget()
+        # Ten mono-caps chips in one row ask for ~1380px; they have to wrap
+        # (the mockup's `flex-wrap`) so the page still fits a 1440 window.
+        self.assertLessEqual(
+            page.minimumSizeHint().width(), 1440 - 2 * widgets.PAGE_GUTTER)
+        row = self.win.engine_chip_row
+        QApplication.processEvents()   # the rebuilt chips are shown on the next turn
+        self.assertGreater(row.heightForWidth(300), row.heightForWidth(5000))
 
     def test_log_toolbar_is_three_boxed_36px_buttons(self):
         self.win.set_mode("activity")

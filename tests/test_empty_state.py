@@ -66,10 +66,10 @@ class TestHeading(_EmptyWindow):
                 self.assertEqual(font.pixelSize(), 36)
 
     def test_it_is_not_a_second_screen_title(self):
-        """`ScreenTitle` stays "the first thing on a page": Queue. / Review."""
+        """`ScreenTitle` stays "the first thing on a page": Queue. / Review. / Activity."""
         win = self._window("dark")
         titles = win.findChildren(QLabel, "ScreenTitle")
-        self.assertEqual(sorted(t.text() for t in titles), ["Queue.", "Review."])
+        self.assertEqual(sorted(t.text() for t in titles), ["Activity.", "Queue.", "Review."])
 
 
 class TestFrame(_EmptyWindow):
