@@ -13,13 +13,18 @@ themes - a size measured on an unstyled window means nothing.
 import os
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from tests import _path  # noqa: F401  (puts the project root on sys.path)
 
 from PIL import Image
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtWidgets import (
+    QApplication, QPushButton, QSlider, QStyle, QStyleOptionSlider,
+)
 
 from gui import widgets
 from gui.preview_text import (
@@ -193,6 +198,91 @@ class TestFramesAndCaptions(_FrameCase):
         self.assertIs(win.review_zoom_tools.parentWidget(), win.review_wipe)
         self.assertTrue(win.review_wipe.rect().contains(
             win.review_zoom_tools.geometry().topLeft()))
+
+
+class TestWipeChrome(_FrameCase):
+    """DAN-1393: the chrome around the Wipe/Differences frame is the mockup's
+    (review-wipe.html), not Qt's stock slider and bare text buttons."""
+
+    def _wipe_window(self, mode):
+        win = self._review_window(mode)
+        pair = SimpleNamespace(local=QPixmap(40, 60), matched=QPixmap(80, 120),
+                               used_fallback=False)
+        patcher = mock.patch("gui.review_view.load_comparison", return_value=pair)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        win._on_review_view_changed("wipe")
+        QApplication.processEvents()
+        return win
+
+    def test_the_slider_handle_is_a_24px_target_with_a_hairline_track(self):
+        for mode in MODES:
+            with self.subTest(mode=mode):
+                win = self._wipe_window(mode)
+                slider = win.wipe_slider
+                self.assertIsInstance(slider, QSlider)
+                opt = QStyleOptionSlider()
+                slider.initStyleOption(opt)
+                style = slider.style()
+                handle = style.subControlRect(
+                    QStyle.ComplexControl.CC_Slider, opt,
+                    QStyle.SubControl.SC_SliderHandle, slider)
+                groove = style.subControlRect(
+                    QStyle.ComplexControl.CC_Slider, opt,
+                    QStyle.SubControl.SC_SliderGroove, slider)
+                self.assertGreaterEqual(handle.width(), 24)
+                self.assertGreaterEqual(handle.height(), 24)
+                # the whole handle is inside the widget, so all of it is clickable
+                self.assertGreaterEqual(slider.height(), handle.height() - 1)
+                self.assertLessEqual(groove.height(), 3)
+
+    def test_local_and_match_name_the_ends_of_the_slider(self):
+        win = self._wipe_window("dark")
+        row = win.review_slider_row
+        labels = [c for c in row.children() if hasattr(c, "text")]
+        self.assertEqual([l.text() for l in labels], ["Local", "Match"])
+        left = labels[0].mapTo(row, labels[0].rect().topLeft()).x()
+        track = win.wipe_slider.mapTo(row, win.wipe_slider.rect().topLeft()).x()
+        right = labels[1].mapTo(row, labels[1].rect().topLeft()).x()
+        self.assertLess(left, track)
+        self.assertGreater(right, track)
+        for label in labels:
+            self.assertTrue(_is_caps_mono(label))
+
+    def test_the_zoom_row_is_boxed_mono_buttons(self):
+        for mode in MODES:
+            with self.subTest(mode=mode):
+                win = self._wipe_window(mode)
+                buttons = win.review_zoom_tools.findChildren(QPushButton)
+                self.assertEqual([b.text() for b in buttons], ["−", "+", "Fit", "100%"])
+                for button in buttons:
+                    self.assertEqual(button.objectName(), "ZoomButton")
+                    self.assertEqual(button.font().family(), "JetBrains Mono")
+                    self.assertEqual(button.font().pixelSize(), 11)
+                    self.assertTrue(_is_caps_mono(button))
+                self.assertEqual(win.review_zoom_label.objectName(), "ZoomPercent")
+
+    def test_wipe_carries_the_one_line_hint_and_a_warning_replaces_it(self):
+        from gui.review_view import WIPE_HINT
+
+        win = self._wipe_window("dark")
+        self.assertEqual(win.review_note.text(), WIPE_HINT)
+        self.assertTrue(win.review_note.isVisibleTo(win))
+        self.assertGreater(
+            win.review_note.mapTo(win, win.review_note.rect().topLeft()).y(),
+            win.review_slider_row.mapTo(win, win.review_slider_row.rect().topLeft()).y())
+        win._review_load_notes = "Showing the downscaled preview."
+        win._apply_wipe_mode("wipe")
+        self.assertEqual(win.review_note.text(), "Showing the downscaled preview.")
+
+    def test_the_wipe_chrome_stays_out_of_side_by_side(self):
+        win = self._wipe_window("dark")
+        win._on_review_view_changed("pair")
+        QApplication.processEvents()
+        self.assertFalse(win.review_slider_row.isVisibleTo(win))
+        self.assertFalse(win.review_note.isVisibleTo(win))
+        self.assertGreaterEqual(win.local_preview.height() / win.height(),
+                                MIN_VIEWPORT_SHARE)
 
 
 class TestViewportBudget(_FrameCase):

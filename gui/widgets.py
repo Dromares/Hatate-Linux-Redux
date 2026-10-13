@@ -849,6 +849,19 @@ def icon_button(glyph, tooltip='', on_click=None, checkable=False, boxed=False,
     return button
 
 
+def zoom_button(glyph, tooltip=''):
+    """One of the Wipe frame's zoom controls: a hairline-boxed mono button
+    (the mockup's `.zoom-tools .btn--icon`). "Fit" is capitals by font, not
+    by string, so `text()` stays what the button says."""
+    button = QPushButton(glyph)
+    button.setObjectName('ZoomButton')
+    button.setCursor(Qt.CursorShape.PointingHandCursor)
+    uppercase_voice(button, tracking=0.1)
+    if tooltip:
+        button.setToolTip(tooltip)
+    return button
+
+
 def apply_tracking(widget, tracking=TRACKING_LABEL):
     """Widens a mono-caps label's letter-spacing - QSS has no
     letter-spacing property at all, so this is the one piece of the

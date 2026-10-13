@@ -113,6 +113,9 @@ class _WordmarkChecks:
         self.assertEqual(word.text(), "Hatate")
         self.assertTrue(_is_caps_mono(word), _font(word).toString())
 
+    def test_word_is_11px_the_mockups_text_label(self):  # DAN-1394
+        self.assertEqual(_font(self.win.findChild(QLabel, "MarkWord")).pixelSize(), 11)
+
     def test_mark_keeps_its_accessible_name(self):
         word = self.win.findChild(QLabel, "MarkWord")
         self.assertEqual(word.parentWidget().accessibleName(), "Hatate")
@@ -128,6 +131,12 @@ class _UppercaseChecks:
             self.assertEqual(button.text(), label)
             self.assertEqual(button.toolTip(), tip)
             self.assertEqual(button.sizeHint().height(), 38, key)  # DAN-1275: mockup tab fill
+            self.assertEqual(_font(button).pixelSize(), 11, key)  # DAN-1394: --text-label
+
+    def test_mode_group_is_the_mockups_width(self):  # DAN-1394: 296px, was 310
+        self.assertAlmostEqual(self.win.mode_switch.sizeHint().width(), 296, delta=3)
+        self.assertAlmostEqual(
+            self.win.mode_buttons["activity"].sizeHint().width(), 112, delta=3)
 
     def test_start_search(self):
         button = self.win.search_toggle_btn
@@ -177,8 +186,24 @@ class _UppercaseChecks:
                 self.assertEqual(font.family(), "JetBrains Mono")
                 self.assertGreater(font.letterSpacing(), 100)
                 self.assertNotEqual(font.capitalization(), CAPS)
+                # DAN-1394: --text-label, and the mockup's 32px field.
+                self.assertEqual(font.pixelSize(), 11)
+                self.assertEqual(button.sizeHint().height(), 32)
         self.assertEqual(band.filter_status_button.text(), "Status: All")
         self.assertEqual(band.filter_clear_button.text(), "Clear")
+
+
+class _MetaLineChecks:
+    """DAN-1394: the run banner's meta line is `--text-micro`, 10px."""
+
+    def test_meta_line_is_10px_mono(self):
+        row, labels = widgets.meta_line([("Quota exhausted at", "15:22"), ("Resets", "12:40 UTC")])
+        self.addCleanup(row.deleteLater)
+        self.assertTrue(labels)
+        for label in labels:
+            with self.subTest(label=label.text()):
+                self.assertEqual(_font(label).pixelSize(), 10)
+                self.assertEqual(_font(label).family(), "JetBrains Mono")
 
 
 class _GearChecks:
@@ -355,8 +380,8 @@ class _ActivityChecks:
 
 
 class _AllChecks(
-    _PerModeWindow, _WordmarkChecks, _UppercaseChecks, _GearChecks, _TitleChecks,
-    _ActivityChecks,
+    _PerModeWindow, _WordmarkChecks, _UppercaseChecks, _MetaLineChecks, _GearChecks,
+    _TitleChecks, _ActivityChecks,
 ):
     pass
 

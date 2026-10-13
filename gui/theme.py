@@ -382,7 +382,7 @@ def stylesheet(mode):
        widgets.section_label() sets QFont.AllUppercase and the tracking
        in Python. ink_65 rather than the mockup's decorative ink_45: it is
        text, so it must clear 4.5:1. ---- */
-    QLabel#SectionLabel {{
+    QLabel#SectionLabel, QLabel#WipeEndLabel {{
             font-family: {font_mono};
             font-size: 11px;
             color: {ink_65};
@@ -450,13 +450,13 @@ def stylesheet(mode):
     QWidget#MetaLine {{ background: transparent; }}
     QLabel#MetaLabel {{
             font-family: {font_mono};
-            font-size: 11px;
+            font-size: 10px;
             color: {ink_65};
             background: transparent;
     }}
     QLabel#MetaFigure {{
             font-family: {font_mono};
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 700;
             color: {ink_100};
             background: transparent;
@@ -465,7 +465,7 @@ def stylesheet(mode):
        as muted as its label (the mockup bolds only the one `<b>`). */
     QLabel#MetaFigureQuiet {{
             font-family: {font_mono};
-            font-size: 11px;
+            font-size: 10px;
             color: {ink_65};
             background: transparent;
     }}
@@ -499,7 +499,7 @@ def stylesheet(mode):
     }}
     QLabel#MarkWord {{
             font-family: {font_mono};
-            font-size: 13px;
+            font-size: 11px;
             font-weight: 700;
             background: transparent;
     }}
@@ -510,6 +510,22 @@ def stylesheet(mode):
     QFrame#ZoomTools {{
             background: {card};
             border: 1px solid {ink_46};
+    }}
+    QPushButton#ZoomButton {{
+            font-family: {font_mono};
+            font-size: 11px;
+            color: {ink_65};
+            background: transparent;
+            border: 1px solid {ink_46};
+            padding: 4px 8px;
+            min-width: 20px;
+    }}
+    QPushButton#ZoomButton:hover {{ color: {ink_100}; border-color: {ink_58}; }}
+    QLabel#ZoomPercent {{
+            font-family: {font_mono};
+            font-size: 11px;
+            color: {ink_65};
+            background: transparent;
     }}
     QLabel#ReadoutGlyph {{
             font-size: 13px;
@@ -870,9 +886,9 @@ def stylesheet(mode):
             background: transparent;
             color: {ink_65};
             border: 1px solid {ink_46};
-            padding: 9px 22px;
+            padding: 10px 24px 11px;
             font-family: {font_mono};
-            font-size: 13px;
+            font-size: 11px;
             font-weight: 700;
             margin: 0;
     }}
@@ -924,8 +940,8 @@ def stylesheet(mode):
        not left on Qt's bottom-right default. */
     QToolButton[voice="field"] {{
             font-family: {font_mono};
-            font-size: 12px;
-            padding-right: 28px;
+            font-size: 11px;
+            padding: 6px 28px 6px 14px;
     }}
     QToolButton[voice="field"]::menu-indicator {{
             subcontrol-origin: padding;
@@ -1094,6 +1110,24 @@ def stylesheet(mode):
             width: 16px;
             margin: -6px 0;
             border: 1px solid {card_alt};
+    }}
+
+    /* The Review wipe slider (mockup `.wipe-slider`): a 3px hairline and a
+       4px stamp bar. The bar is drawn inside a transparent border so the
+       handle's hit target is 24px wide, not the 4px it looks. */
+    QSlider#WipeSlider::groove:horizontal {{
+            height: 3px;
+            background: {ink_18};
+    }}
+    QSlider#WipeSlider::sub-page:horizontal {{ background: {ink_18}; }}
+    QSlider#WipeSlider::handle:horizontal {{
+            background: {ink_100};
+            background-clip: padding;
+            width: 4px;
+            margin: -11px 0;
+            border: 1px solid transparent;
+            border-left-width: 10px;
+            border-right-width: 10px;
     }}
 
     /* ---- checkbox / radio ---- */

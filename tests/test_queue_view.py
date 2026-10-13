@@ -362,6 +362,27 @@ class TestQueueCellContent(GuiTestCase):
         spy.end()
         return spy, image
 
+    # -- DAN-1391 ------------------------------------------------------
+
+    def test_size_diff_and_upscale_cells_are_11px_mono_with_tiered_weight(self):
+        """tokens.css .diff/.upscale--*: 11px mono, 700 for an upgrade or
+        flagged cell, 500 for a downgrade or clear one. The table's 14px
+        regular made the two read as the same ink tier."""
+        from gui.image_table_model import COL_SIZE_DELTA, COL_UPSCALE
+        up = self._matched((1000, 1500), (2500, 3750))
+        up.upscale_verdict = "flagged"
+        down = self._matched((1000, 1500), (400, 600))
+        down.upscale_verdict = "clear"
+        win = self._window([up, down])
+        role = Qt.ItemDataRole.FontRole
+        for col in (COL_SIZE_DELTA, COL_UPSCALE):
+            with self.subTest(col=col):
+                hi, lo = self._text(win, 0, col, role), self._text(win, 1, col, role)
+                self.assertEqual((hi.pixelSize(), lo.pixelSize()), (11, 11))
+                self.assertEqual(hi.weight(), QFont.Weight.Bold)
+                self.assertEqual(lo.weight(), QFont.Weight.Medium)
+                self.assertEqual(hi.families()[0], "JetBrains Mono")
+
     # -- Q-11 ----------------------------------------------------------
 
     def test_size_ratio_reads_triangle_ratio_times(self):
