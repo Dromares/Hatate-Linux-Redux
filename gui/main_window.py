@@ -819,7 +819,9 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
         # hairline, so a line round all of it would be a box in a box.
         card, card_layout = widgets.card(framed=False)
         card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.setSpacing(widgets.QUEUE_BODY_GAP)
         card_layout.addWidget(widgets.screen_title("Queue."))
+        card_layout.addSpacing(widgets.SCREEN_TITLE_GAP)
 
         # Hidden until _restore_saved_session finds an unclean-shutdown
         # restore with something in it (DAN-660) - built here, not there,
