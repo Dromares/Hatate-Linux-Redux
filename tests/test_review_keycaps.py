@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import QApplication, QFrame
 
 from core.models import ImageEntry, MatchCandidate, MatchStatus, Tag, TagSource
 from gui import widgets
+from tests._qt_app import ensure_app
 from tests.test_gui_harness import make_themed_window
 from tests.test_gui_smoke import GuiTestCase
 from tests.test_theme import _contrast_ratio
@@ -95,10 +96,8 @@ class _ReviewCase(GuiTestCase):
 
 class TestKeyCapWidget(GuiTestCase):
     def setUp(self):
-        # Held on the instance: PyQt destroys a QApplication it created when
-        # the last Python reference goes (DAN-1351), and these tests make bare
-        # widgets with no window harness to own one.
-        self.app = QApplication.instance() or QApplication([])
+        # ensure_app() pins the QApplication process-wide (DAN-1351/1361).
+        self.app = ensure_app()
 
     def test_text_is_the_key_as_given_and_the_capitals_are_the_fonts(self):
         cap = widgets.KeyCap("Return")
