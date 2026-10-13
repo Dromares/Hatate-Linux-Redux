@@ -52,6 +52,7 @@ COL_REVIEWED, COL_UPSCALE = 10, 11
 EMPTY_CELL = "\u2014"
 
 HEADER_TRACKING = 110  # percent: tokens.css's 0.1em on the table headers
+CELL_TRACKING = 106  # percent: tokens.css's 0.06em on .upscale--*
 
 # First-run column widths as shares of the width left once the thumbnail
 # column has its own. The last column (Upscale) is the stretch section and
@@ -356,7 +357,20 @@ class ImageTableModel(QAbstractTableModel):
             # cell in the mono stack instead covers the glyph and the
             # Latin label in one consistent face, with no split-paint
             # delegate needed for just these two.
-            return theme.mono_font()
+            # Size and weight are tokens.css's .diff/.upscale--*: 11px, 700
+            # for the rare decision-relevant cell (upgrade, flagged), 500 for
+            # the routine one (downgrade, clear).
+            font = theme.mono_font()
+            font.setPixelSize(11)
+            tier = (_size_delta_weight(entry) if col == COL_SIZE_DELTA
+                    else _upscale_weight(entry))
+            if tier == "ink_100":
+                font.setWeight(QFont.Weight.Bold)
+            elif tier == "ink_65":
+                font.setWeight(QFont.Weight.Medium)
+            if col == COL_UPSCALE:
+                font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, CELL_TRACKING)
+            return font
         if role == Qt.ItemDataRole.ToolTipRole:
             return self._tooltip(entry, col)
         return None
