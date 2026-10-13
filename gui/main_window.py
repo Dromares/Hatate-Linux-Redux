@@ -2478,7 +2478,7 @@ class MainWindow(ShellMixin, ReviewViewMixin, ActivityViewMixin, QMainWindow):
             old = slot.takeAt(0).widget()
             if old is not None:
                 old.deleteLater()
-        meta, _labels = widgets.meta_line(items, centered=False)
+        meta, _labels = widgets.meta_line(items, centered=False, anchor=0)
         slot.addWidget(meta)
         self.run_note_label.setText(QUOTA_PAUSED_NOTE)
         self._refresh_run_progress_label()

@@ -9,7 +9,10 @@ anyone having to remember 18/16/18/16. Anything that decides a measurement
 belongs here rather than in a view.
 """
 from PyQt6.QtCore import QEvent, QPoint, QRect, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QFontMetrics, QPainter, QPixmap, QRegion
+from PyQt6.QtGui import (
+    QAbstractTextDocumentLayout, QFont, QFontMetrics, QPainter, QPixmap, QRegion,
+    QTextBlockFormat, QTextCursor, QTextDocument,
+)
 from PyQt6.QtWidgets import (
     QButtonGroup, QComboBox, QFrame, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
@@ -35,6 +38,8 @@ RUN_BANNER_MARGINS = (24, 24, 24, 24)   # its `padding: var(--space-5)`
 RUN_BANNER_GAP = 24            # its `gap: var(--space-5)` between glyph and text
 RUN_BANNER_GLYPH_COLUMN = 17   # puts the prose 66px in from the frame edge, as the mockup does
 RUN_BANNER_DISCARD_TRACKING = 0.06   # `.run-banner__discard`'s letter-spacing
+RUN_BANNER_PROSE_LEADING = 20   # the line pitch the mockup draws `.run-banner__detail` at
+RUN_BANNER_ACTIONS_GAP = 4      # `.run-banner__actions { margin-top: var(--space-1) }`, on top of the column's 8
 SURVIVED_GLYPH_BOX = 42   # the mockup's boxed ✕: a 32px glyph in a hairline square
 
 
@@ -127,6 +132,53 @@ class WrappingLabel(QLabel):
             self.setMinimumHeight(needed)
 
 
+class LeadedLabel(WrappingLabel):
+    """A wrapped label drawn at a fixed line pitch.
+
+    The mockup's prose is 20px-leaded; QSS has no `line-height`, and rich
+    text would make `.text()` return markup, which everything that reads
+    these labels would have to learn to strip. So the text stays plain and
+    this lays it out itself with `QTextBlockFormat.setLineHeight`, the way
+    a QLabel would, and draws it in the label's own font and QSS colour.
+    """
+
+    def __init__(self, leading, text=''):
+        self._leading = leading
+        super().__init__(text)
+
+    def _document(self, width):
+        doc = QTextDocument()
+        doc.setDocumentMargin(0)
+        doc.setDefaultFont(self.font())
+        doc.setPlainText(self.text())
+        doc.setTextWidth(max(width, 1))
+        block = QTextBlockFormat()
+        block.setLineHeight(
+            float(self._leading), QTextBlockFormat.LineHeightTypes.FixedHeight.value)
+        cursor = QTextCursor(doc)
+        cursor.select(QTextCursor.SelectionType.Document)
+        cursor.mergeBlockFormat(block)
+        return doc
+
+    def heightForWidth(self, width):
+        margins = self.contentsMargins()
+        inner = width - margins.left() - margins.right()
+        return int(self._document(inner).size().height() + 0.999) + margins.top() + margins.bottom()
+
+    def paintEvent(self, event):
+        rect = self.contentsRect()
+        doc = self._document(rect.width())
+        painter = QPainter(self)
+        painter.translate(rect.topLeft())
+        context = QAbstractTextDocumentLayout.PaintContext()
+        context.palette = self.palette()
+        context.palette.setColor(
+            context.palette.ColorRole.Text,
+            self.palette().color(self.foregroundRole()))
+        doc.documentLayout().draw(painter, context)
+        painter.end()
+
+
 def _banner_shell(glyph_text, head_text):
     """The frame both Queue banners share (S-01, S-03): a bracketed card
     with a status glyph, a mono kicker, wrapped prose, a meta-line slot,
@@ -157,15 +209,18 @@ def _banner_shell(glyph_text, head_text):
     head.setObjectName('RunBannerHead')
     uppercase_voice(head)
     text_col.addWidget(head)
-    body = WrappingLabel()
+    body = LeadedLabel(RUN_BANNER_PROSE_LEADING)
     body.setObjectName('RunBannerBody')
     body.setMaximumWidth(RUN_BANNER_PROSE_WIDTH)
     text_col.addWidget(body)
     meta_slot = QVBoxLayout()
     meta_slot.setContentsMargins(0, 0, 0, 0)
     text_col.addLayout(meta_slot)
+    # The mockup's actions row sits one more `space-1` below the meta line
+    # than the column's own gap.
     actions = QHBoxLayout()
     actions.setSpacing(BUTTON_ROW_SPACING)
+    actions.setContentsMargins(0, RUN_BANNER_ACTIONS_GAP, 0, 0)
     text_col.addLayout(actions)
     layout.addLayout(text_col, 1)
 
@@ -236,7 +291,7 @@ def quota_pause_banner():
     return frame, parts
 
 
-def meta_line(items, centered=True):
+def meta_line(items, centered=True, anchor=None):
     """The mockup's `.run-banner__meta`: a mono-caps row of `label  FIGURE`
     pairs, the figure bright and bold against its dim label.
 
@@ -246,6 +301,11 @@ def meta_line(items, centered=True):
     row widget and its flat list of labels, in order. Centred under a
     centred block (S-05); `centered=False` sets it flush left under the
     run banner's prose (S-01).
+
+    `anchor` is the index of the one figure that stays bright and bold, the
+    mockup's lone `<b>` (the quota banner's time, the thing the eye is sent
+    to); the rest read as plain muted text like their labels. `None` bolds
+    every figure.
     """
     row = QWidget()
     row.setObjectName('MetaLine')
@@ -255,10 +315,11 @@ def meta_line(items, centered=True):
     if centered:
         layout.addStretch(1)
     labels = []
-    for label_text, figure_text in items:
+    for index, (label_text, figure_text) in enumerate(items):
         pair = QHBoxLayout()
         pair.setSpacing(6)
-        for text, name in ((label_text, 'MetaLabel'), (figure_text, 'MetaFigure')):
+        figure_name = 'MetaFigure' if anchor in (None, index) else 'MetaFigureQuiet'
+        for text, name in ((label_text, 'MetaLabel'), (figure_text, figure_name)):
             label = QLabel(text)
             label.setObjectName(name)
             uppercase_voice(label, 0.08)
