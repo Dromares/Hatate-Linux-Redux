@@ -511,6 +511,22 @@ def stylesheet(mode):
             background: {card};
             border: 1px solid {ink_46};
     }}
+    QPushButton#ZoomButton {{
+            font-family: {font_mono};
+            font-size: 11px;
+            color: {ink_65};
+            background: transparent;
+            border: 1px solid {ink_46};
+            padding: 4px 8px;
+            min-width: 20px;
+    }}
+    QPushButton#ZoomButton:hover {{ color: {ink_100}; border-color: {ink_58}; }}
+    QLabel#ZoomPercent {{
+            font-family: {font_mono};
+            font-size: 11px;
+            color: {ink_65};
+            background: transparent;
+    }}
     QLabel#ReadoutGlyph {{
             font-size: 13px;
             color: {ink_65};
@@ -1074,6 +1090,24 @@ def stylesheet(mode):
             width: 16px;
             margin: -6px 0;
             border: 1px solid {card_alt};
+    }}
+
+    /* The Review wipe slider (mockup `.wipe-slider`): a 3px hairline and a
+       4px stamp bar. The bar is drawn inside a transparent border so the
+       handle's hit target is 24px wide, not the 4px it looks. */
+    QSlider#WipeSlider::groove:horizontal {{
+            height: 3px;
+            background: {ink_18};
+    }}
+    QSlider#WipeSlider::sub-page:horizontal {{ background: {ink_18}; }}
+    QSlider#WipeSlider::handle:horizontal {{
+            background: {ink_100};
+            background-clip: padding;
+            width: 4px;
+            margin: -11px 0;
+            border: 1px solid transparent;
+            border-left-width: 10px;
+            border-right-width: 10px;
     }}
 
     /* ---- checkbox / radio ---- */
