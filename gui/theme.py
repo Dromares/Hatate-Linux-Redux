@@ -455,6 +455,14 @@ def stylesheet(mode):
             color: {ink_100};
             background: transparent;
     }}
+    /* A figure that is not the meta line's anchor: the same face, plain and
+       as muted as its label (the mockup bolds only the one `<b>`). */
+    QLabel#MetaFigureQuiet {{
+            font-family: {font_mono};
+            font-size: 11px;
+            color: {ink_65};
+            background: transparent;
+    }}
 
     QLabel#Heading {{
             font-family: {font_serif};

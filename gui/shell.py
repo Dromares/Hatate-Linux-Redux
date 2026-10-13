@@ -310,12 +310,6 @@ class ShellMixin:
         )
         row.addWidget(self.run_progress_label)
 
-        # A note about the run as a whole rather than a count - R-06's
-        # `last run failed - see crash log`, and P12a's `stopped 2h 14m
-        # ago`. Empty (and so out of the way) until something sets it.
-        self.run_note_label = Readout()
-        row.addWidget(self.run_note_label)
-
         self.sent_count_label = Readout()
         self.sent_count_label.setToolTip(
             "How many images in the list have been sent to Hydrus. Counts images "
@@ -323,6 +317,13 @@ class ShellMixin:
             "downloader is shown separately until it's confirmed."
         )
         row.addWidget(self.sent_count_label)
+
+        # A note about the run as a whole rather than a count - R-06's
+        # `last run failed - see crash log`, and P12a's `stopped 2h 14m
+        # ago`. Sits after the counts (searched · sent · note), as in
+        # the mockup. Empty (and so out of the way) until something sets it.
+        self.run_note_label = Readout()
+        row.addWidget(self.run_note_label)
 
         self.wait_countdown_label = Readout()
         self.wait_countdown_label.setToolTip(

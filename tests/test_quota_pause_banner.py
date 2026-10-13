@@ -171,11 +171,47 @@ class TestBannerVariant(_PausedWindow):
                     meta_top = meta.mapTo(win.quota_banner, meta.rect().topLeft()).y()
                     self.assertLessEqual(body_bottom, meta_top)
 
+    def test_the_prose_is_drawn_at_the_mockups_20px_leading(self):
+        # DAN-1345 delta 1: `.run-banner__detail` is 20px-pitched; QSS cannot
+        # say so, and the label's text must stay plain for `.text()` readers.
+        for mode in MODES:
+            with self.subTest(mode=mode):
+                body = self._label(self._window(mode), "RunBannerBody")
+                self.assertFalse(body.text().lstrip().startswith("<"))
+                height = body.heightForWidth(body.width())
+                # Two lines or more, whole 20px lines (the default pitch is ~18).
+                self.assertGreaterEqual(height, 40)
+                self.assertEqual(height % 20, 0)
+
+    def test_the_banner_keeps_the_mockups_vertical_rhythm(self):
+        # DAN-1345 delta 2: meta-to-buttons is the column's 8 + `space-1`.
+        win = self._window("dark")
+        meta = win.quota_banner.findChild(widgets.QWidget, "MetaLine")
+        button = win._quota_banner_parts['review_button']
+        gap = (button.mapTo(win.quota_banner, button.rect().topLeft()).y()
+               - meta.mapTo(win.quota_banner, meta.rect().bottomLeft()).y())
+        self.assertGreaterEqual(gap, 12)
+
+    def test_the_run_strip_puts_the_pause_note_after_the_counts(self):
+        # DAN-1345 delta 4: searched · sent · note, as the mockup orders it.
+        win = self._window("dark")
+        win.show()
+        QApplication.processEvents()
+        x = lambda w: w.mapTo(win, w.rect().topLeft()).x()
+        self.assertTrue(win.run_note_label.isVisible())
+        self.assertLess(x(win.run_progress_label), x(win.sent_count_label))
+        self.assertLess(x(win.sent_count_label), x(win.run_note_label))
+
     def test_the_meta_line_gives_the_time_the_count_and_the_reset(self):
         win = self._window("dark")
         labels = [lbl.text() for lbl in win.quota_banner.findChildren(QLabel, "MetaLabel")]
-        figures = [lbl.text() for lbl in win.quota_banner.findChildren(QLabel, "MetaFigure")]
+        every = [lbl for lbl in win.quota_banner.findChildren(QLabel)
+                 if lbl.objectName() in ("MetaFigure", "MetaFigureQuiet")]
+        figures = [lbl.text() for lbl in every]
         self.assertEqual(labels, ["Quota exhausted at", "Images waiting", "Resets"])
+        # The mockup bolds only the time; the count and the reset read plain.
+        self.assertEqual([lbl.objectName() for lbl in every],
+                         ["MetaFigure", "MetaFigureQuiet", "MetaFigureQuiet"])
         self.assertEqual(figures[1], "4")
         self.assertRegex(figures[0], r"^\d\d:\d\d$")
         self.assertRegex(figures[2], r"^\d\d:\d\d UTC$")
