@@ -51,6 +51,9 @@ IDLE_PROGRESS = "nothing queued"
 IDLE_ETA = "ETA —"
 # What the strip says after a run that left nothing behind (R-06).
 RUN_FAILED_NOTE = "last run failed — see crash log"
+# What it says while SauceNAO's daily quota holds the run (S-04, R-06).
+QUOTA_PAUSED_NOTE = "paused — quota exhausted"
+QUOTA_PAUSED_ETA = "ETA paused"
 
 # A "figure" in a readout: the part the mockup sets in bold (`<b>7/8</b>
 # searched`, `waiting <b>38s</b>`, `ETA <b>~2 min</b>`). A number with the
@@ -192,7 +195,7 @@ class ShellMixin:
         central = widgets.GhostKanji(GHOST_GLYPHS["queue"])
         self.ghost = central
         root = QVBoxLayout(central)
-        root.setContentsMargins(*widgets.PAGE_MARGINS)
+        root.setContentsMargins(*widgets.SHELL_MARGINS)
         root.setSpacing(widgets.PAGE_SPACING)
 
         root.addWidget(self._build_top_bar())
@@ -229,7 +232,7 @@ class ShellMixin:
         # Created here rather than in the status bar, which is where it
         # used to be.
         self.search_toggle_btn = widgets.pill_button(
-            "▶  Start Search", self.action_toggle_search, primary=True,
+            "▶ Start Search", self.action_toggle_search, primary=True,
         )
         row.addWidget(self.search_toggle_btn)
 
@@ -307,12 +310,6 @@ class ShellMixin:
         )
         row.addWidget(self.run_progress_label)
 
-        # A note about the run as a whole rather than a count - R-06's
-        # `last run failed - see crash log`, and P12a's `stopped 2h 14m
-        # ago`. Empty (and so out of the way) until something sets it.
-        self.run_note_label = Readout()
-        row.addWidget(self.run_note_label)
-
         self.sent_count_label = Readout()
         self.sent_count_label.setToolTip(
             "How many images in the list have been sent to Hydrus. Counts images "
@@ -320,6 +317,13 @@ class ShellMixin:
             "downloader is shown separately until it's confirmed."
         )
         row.addWidget(self.sent_count_label)
+
+        # A note about the run as a whole rather than a count - R-06's
+        # `last run failed - see crash log`, and P12a's `stopped 2h 14m
+        # ago`. Sits after the counts (searched · sent · note), as in
+        # the mockup. Empty (and so out of the way) until something sets it.
+        self.run_note_label = Readout()
+        row.addWidget(self.run_note_label)
 
         self.wait_countdown_label = Readout()
         self.wait_countdown_label.setToolTip(
@@ -373,9 +377,19 @@ class ShellMixin:
         wanted to be.
         """
         self.status_bar = QStatusBar()
+        self.status_bar.setObjectName("AppStatusBar")
+        # The mockup's strip is a fixed 24px with a grip-less right edge;
+        # the label is inset by the page gutter so its text lines up with
+        # the content above it (U2).
+        self.status_bar.setSizeGripEnabled(False)
+        self.status_bar.setFixedHeight(widgets.STATUSBAR_HEIGHT)
         self.setStatusBar(self.status_bar)
         self.status_label = QLabel("Ready")
-        self.status_bar.addWidget(self.status_label)
+        self.status_label.setObjectName("StatusText")
+        self.status_label.setContentsMargins(
+            widgets.PAGE_GUTTER - widgets.STATUSBAR_ITEM_INSET, 0, widgets.PAGE_GUTTER, 0)
+        widgets.apply_tracking(self.status_label, 0.06)
+        self.status_bar.addWidget(self.status_label, 1)
 
     # ------------------------------------------------------------------
     # Modes

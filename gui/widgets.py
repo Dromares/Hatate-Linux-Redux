@@ -9,10 +9,14 @@ anyone having to remember 18/16/18/16. Anything that decides a measurement
 belongs here rather than in a view.
 """
 from PyQt6.QtCore import QEvent, QPoint, QRect, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QFontMetrics, QPainter, QPixmap, QRegion
+from PyQt6.QtGui import (
+    QAbstractTextDocumentLayout, QFont, QFontMetrics, QPainter, QPixmap, QRegion,
+    QTextBlockFormat, QTextCursor, QTextDocument,
+)
 from PyQt6.QtWidgets import (
     QButtonGroup, QComboBox, QFrame, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
+    QLabel, QLineEdit, QPushButton, QStyle, QStyleOptionComboBox, QStylePainter,
+    QVBoxLayout, QWidget,
 )
 
 from gui import theme
@@ -24,13 +28,27 @@ TRACKING_LABEL = 0.16  # transcribed from tokens.css's --tracking-label
 CARD_MARGINS = (18, 16, 18, 16)
 CARD_SPACING = 10
 PAGE_MARGINS = (22, 18, 22, 18)
+# The main window's own page gutter (U3 / DAN-1277): tokens.css's `.app`
+# pads `var(--space-6)` left and right, and the menubar and status bar are
+# inset by the same 32. Dialogs keep PAGE_MARGINS; they are not screens.
+PAGE_GUTTER = 32
+SHELL_MARGINS = (PAGE_GUTTER, 18, PAGE_GUTTER, 18)
+MENUBAR_HEIGHT = 28       # `.menubar`: 28px with its hairline, DAN-1158 B-1
+STATUSBAR_ITEM_INSET = 2  # what QStatusBar itself puts left of its first item
+STATUSBAR_HEIGHT = 24     # `.statusbar`: 24px with its top rule, B-2
 PAGE_SPACING = 14
 SPLITTER_HANDLE = 12
 INPUT_MIN_HEIGHT = 38     # a single-line edit crushed below this stops being readable
 BUTTON_MIN_HEIGHT = 40    # tokens.css's page-level button, plus the 36px boxed icon below
 ICON_BOX = 36
+BUTTON_ROW_SPACING = 12   # tokens.css `--space-3`: the gap between buttons in a row
 RUN_BANNER_PROSE_WIDTH = 840   # the mockup's `.run-banner__detail` max-width
 RUN_BANNER_MARGINS = (24, 24, 24, 24)   # its `padding: var(--space-5)`
+RUN_BANNER_GAP = 24            # its `gap: var(--space-5)` between glyph and text
+RUN_BANNER_GLYPH_COLUMN = 17   # puts the prose 66px in from the frame edge, as the mockup does
+RUN_BANNER_DISCARD_TRACKING = 0.06   # `.run-banner__discard`'s letter-spacing
+RUN_BANNER_PROSE_LEADING = 20   # the line pitch the mockup draws `.run-banner__detail` at
+RUN_BANNER_ACTIONS_GAP = 4      # `.run-banner__actions { margin-top: var(--space-1) }`, on top of the column's 8
 SURVIVED_GLYPH_BOX = 42   # the mockup's boxed ✕: a 32px glyph in a hairline square
 
 
@@ -123,6 +141,108 @@ class WrappingLabel(QLabel):
             self.setMinimumHeight(needed)
 
 
+class LeadedLabel(WrappingLabel):
+    """A wrapped label drawn at a fixed line pitch.
+
+    The mockup's prose is 20px-leaded; QSS has no `line-height`, and rich
+    text would make `.text()` return markup, which everything that reads
+    these labels would have to learn to strip. So the text stays plain and
+    this lays it out itself with `QTextBlockFormat.setLineHeight`, the way
+    a QLabel would, and draws it in the label's own font and QSS colour.
+    """
+
+    def __init__(self, leading, text=''):
+        self._leading = leading
+        super().__init__(text)
+
+    def _document(self, width):
+        doc = QTextDocument()
+        doc.setDocumentMargin(0)
+        doc.setDefaultFont(self.font())
+        doc.setPlainText(self.text())
+        doc.setTextWidth(max(width, 1))
+        block = QTextBlockFormat()
+        block.setLineHeight(
+            float(self._leading), QTextBlockFormat.LineHeightTypes.FixedHeight.value)
+        cursor = QTextCursor(doc)
+        cursor.select(QTextCursor.SelectionType.Document)
+        cursor.mergeBlockFormat(block)
+        return doc
+
+    def heightForWidth(self, width):
+        margins = self.contentsMargins()
+        inner = width - margins.left() - margins.right()
+        return int(self._document(inner).size().height() + 0.999) + margins.top() + margins.bottom()
+
+    def paintEvent(self, event):
+        rect = self.contentsRect()
+        doc = self._document(rect.width())
+        painter = QPainter(self)
+        painter.translate(rect.topLeft())
+        context = QAbstractTextDocumentLayout.PaintContext()
+        context.palette = self.palette()
+        context.palette.setColor(
+            context.palette.ColorRole.Text,
+            self.palette().color(self.foregroundRole()))
+        doc.documentLayout().draw(painter, context)
+        painter.end()
+
+
+def _banner_shell(glyph_text, head_text):
+    """The frame both Queue banners share (S-01, S-03): a bracketed card
+    with a status glyph, a mono kicker, wrapped prose, a meta-line slot,
+    and an empty row for the actions, which each banner fills itself.
+
+    Both keep the `RunBanner*` object names, so one set of QSS rules draws
+    them and they cannot drift apart.
+    """
+    frame = QFrame()
+    frame.setObjectName('RunBanner')
+    layout = QHBoxLayout(frame)
+    layout.setContentsMargins(*RUN_BANNER_MARGINS)
+    layout.setSpacing(RUN_BANNER_GAP)
+    layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+    glyph = QLabel(glyph_text)
+    glyph.setObjectName('RunBannerGlyph')
+    glyph.setFixedWidth(RUN_BANNER_GLYPH_COLUMN)
+    glyph.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+    layout.addWidget(glyph, 0, Qt.AlignmentFlag.AlignTop)
+
+    text_col = QVBoxLayout()
+    text_col.setSpacing(8)
+    # The kicker is sentence case with the capitals in the font, as
+    # `section_label` does: the string stays readable to anything that
+    # reads `.text()`.
+    head = QLabel(head_text)
+    head.setObjectName('RunBannerHead')
+    uppercase_voice(head)
+    text_col.addWidget(head)
+    body = LeadedLabel(RUN_BANNER_PROSE_LEADING)
+    body.setObjectName('RunBannerBody')
+    body.setMaximumWidth(RUN_BANNER_PROSE_WIDTH)
+    text_col.addWidget(body)
+    meta_slot = QVBoxLayout()
+    meta_slot.setContentsMargins(0, 0, 0, 0)
+    text_col.addLayout(meta_slot)
+    # The mockup's actions row sits one more `space-1` below the meta line
+    # than the column's own gap.
+    actions = QHBoxLayout()
+    actions.setSpacing(BUTTON_ROW_SPACING)
+    actions.setContentsMargins(0, RUN_BANNER_ACTIONS_GAP, 0, 0)
+    text_col.addLayout(actions)
+    layout.addLayout(text_col, 1)
+
+    Brackets(frame)
+    return frame, {
+        'glyph': glyph,
+        'head': head,
+        'body': body,
+        'meta_slot': meta_slot,
+        'actions': actions,
+    }
+
+
 def run_banner():
     """The interrupted-run notice (DAN-660, S-01): a bracketed frame with a
     status glyph, a kicker, reassuring prose, a meta line, and three actions
@@ -134,65 +254,53 @@ def run_banner():
     its own existing behaviour. The meta line is added into `meta_slot`
     when it is known, because its figures come from what is on disk then.
     """
-    frame = QFrame()
-    frame.setObjectName('RunBanner')
-    layout = QHBoxLayout(frame)
-    layout.setContentsMargins(*RUN_BANNER_MARGINS)
-    layout.setSpacing(CARD_SPACING)
-    layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-    glyph = QLabel(theme.status_glyph('poor'))
-    glyph.setObjectName('RunBannerGlyph')
-    layout.addWidget(glyph, 0, Qt.AlignmentFlag.AlignTop)
-
-    text_col = QVBoxLayout()
-    text_col.setSpacing(8)
-    # The kicker is sentence case with the capitals in the font, as
-    # `section_label` does: the string stays readable to anything that
-    # reads `.text()`.
-    head = QLabel("Run interrupted \u2014 partial results survived")
-    head.setObjectName('RunBannerHead')
-    uppercase_voice(head)
-    text_col.addWidget(head)
-    body = WrappingLabel()
-    body.setObjectName('RunBannerBody')
-    body.setMaximumWidth(RUN_BANNER_PROSE_WIDTH)
-    text_col.addWidget(body)
-    meta_slot = QVBoxLayout()
-    meta_slot.setContentsMargins(0, 0, 0, 0)
-    text_col.addLayout(meta_slot)
+    frame, parts = _banner_shell(
+        theme.status_glyph('poor'), "Run interrupted \u2014 partial results survived")
+    actions = parts.pop('actions')
 
     # The action hierarchy is unchanged from DAN-660 and is not to be
     # restyled for the frame: Resume is the one primary, and "Discard" is
     # deliberately the quietest element on the banner, not a stamped
     # button - error-cost asymmetry: a wrong delete costs more than a
     # wrong tag, so it never gets primary-button weight.
-    actions = QHBoxLayout()
-    actions.setSpacing(12)
     resume_button = pill_button("Resume Queue", primary=True)
     actions.addWidget(resume_button)
     crash_log_button = pill_button("View Crash Log")
     actions.addWidget(crash_log_button)
     discard_label = LinkLabel("Discard &amp; start fresh")
     discard_label.setObjectName('RunBannerDiscard')
+    uppercase_voice(discard_label, RUN_BANNER_DISCARD_TRACKING)
     actions.addWidget(discard_label)
     actions.addStretch(1)
-    text_col.addLayout(actions)
-    layout.addLayout(text_col, 1)
-
-    Brackets(frame)
-    return frame, {
-        'glyph': glyph,
-        'head': head,
-        'body': body,
-        'meta_slot': meta_slot,
-        'resume_button': resume_button,
-        'crash_log_button': crash_log_button,
-        'discard_label': discard_label,
-    }
+    parts.update(resume_button=resume_button, crash_log_button=crash_log_button,
+                 discard_label=discard_label)
+    return frame, parts
 
 
-def meta_line(items, centered=True):
+def quota_pause_banner():
+    """The quota-paused notice (DAN-1167, S-03): the interrupted banner's
+    frame, with `\u2026` for its glyph (a run waiting, not a run hurt) and two
+    actions - reading what is waiting, which is the primary, and carrying
+    on without SauceNAO.
+
+    It replaces the modal this pause used to raise (ruling C-4 on
+    DAN-1155): a run left alone for hours must not sit waiting on a click,
+    and a banner is still there when the window is next looked at - or
+    relaunched. Same contract as `run_banner`: the caller fills it in.
+    """
+    frame, parts = _banner_shell(
+        "\u2026", "Run paused \u2014 SauceNAO's daily quota is exhausted")
+    actions = parts.pop('actions')
+    review_button = pill_button("Review the waiting \u2192", primary=True)
+    actions.addWidget(review_button)
+    continue_button = pill_button("Continue with other engines")
+    actions.addWidget(continue_button)
+    actions.addStretch(1)
+    parts.update(review_button=review_button, continue_button=continue_button)
+    return frame, parts
+
+
+def meta_line(items, centered=True, anchor=None):
     """The mockup's `.run-banner__meta`: a mono-caps row of `label  FIGURE`
     pairs, the figure bright and bold against its dim label.
 
@@ -202,6 +310,11 @@ def meta_line(items, centered=True):
     row widget and its flat list of labels, in order. Centred under a
     centred block (S-05); `centered=False` sets it flush left under the
     run banner's prose (S-01).
+
+    `anchor` is the index of the one figure that stays bright and bold, the
+    mockup's lone `<b>` (the quota banner's time, the thing the eye is sent
+    to); the rest read as plain muted text like their labels. `None` bolds
+    every figure.
     """
     row = QWidget()
     row.setObjectName('MetaLine')
@@ -211,10 +324,11 @@ def meta_line(items, centered=True):
     if centered:
         layout.addStretch(1)
     labels = []
-    for label_text, figure_text in items:
+    for index, (label_text, figure_text) in enumerate(items):
         pair = QHBoxLayout()
         pair.setSpacing(6)
-        for text, name in ((label_text, 'MetaLabel'), (figure_text, 'MetaFigure')):
+        figure_name = 'MetaFigure' if anchor in (None, index) else 'MetaFigureQuiet'
+        for text, name in ((label_text, 'MetaLabel'), (figure_text, figure_name)):
             label = QLabel(text)
             label.setObjectName(name)
             uppercase_voice(label, 0.08)
@@ -282,6 +396,7 @@ def nothing_survived(meta_items, below_weight):
     crash_log = pill_button("View crash log")
     add_files = pill_button("Add files\u2026")
     buttons = QHBoxLayout()
+    buttons.setSpacing(BUTTON_ROW_SPACING)
     buttons.addStretch(1)
     for button in (new_search, crash_log, add_files):
         buttons.addWidget(button)
@@ -386,6 +501,26 @@ def pill_button(text, on_click=None, primary=False, uppercase=True):
         button.setProperty('voice', 'caps')
         button.setMinimumHeight(BUTTON_MIN_HEIGHT)
         uppercase_voice(button)
+    if on_click is not None:
+        button.clicked.connect(on_click)
+    return button
+
+
+def link_button(text, on_click=None):
+    """An action drawn as an underlined mono-caps label, not a button: the
+    mockup's filter-bar `Clear`. No border, no fill - the underline is the
+    affordance, and the stylesheet's disabled tier is what says "nothing to
+    clear". The underline is on the QFont, so the accessible name is still
+    plain `text`.
+    """
+    button = QPushButton(text)
+    button.setObjectName('LinkButton')
+    button.setFlat(True)
+    button.setCursor(Qt.CursorShape.PointingHandCursor)
+    uppercase_voice(button)
+    font = button.font()
+    font.setUnderline(True)
+    button.setFont(font)
     if on_click is not None:
         button.clicked.connect(on_click)
     return button
@@ -763,6 +898,53 @@ class WideComboBox(QComboBox):
         if needed_width > self.view().minimumWidth():
             self.view().setMinimumWidth(needed_width)
         super().showPopup()
+
+
+class CandidatePicker(WideComboBox):
+    """The Review rail's match picker (U6): one mono line that ends in an
+    ellipsis when it does not fit, and a visible chevron.
+
+    Qt clips a closed combo's text hard at the edge, and the stylesheet's
+    drop-down box (which has no arrow image) paints nothing, so both are
+    drawn here. The popup is untouched and still lists the full text.
+    """
+
+    HEIGHT = 32          # `.picker`: height 32px
+    CHEVRON = "\u25be"   # the mockup's ▾
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("CandidatePicker")
+        self.setFixedHeight(self.HEIGHT)
+
+    def elided_text(self):
+        """What the closed picker shows for the current item."""
+        option = self._option()
+        edit = self.style().subControlRect(
+            QStyle.ComplexControl.CC_ComboBox, option,
+            QStyle.SubControl.SC_ComboBoxEditField, self)
+        return self.fontMetrics().elidedText(
+            self.currentText(), Qt.TextElideMode.ElideRight, edit.width())
+
+    def _option(self):
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        return option
+
+    def paintEvent(self, event):
+        painter = QStylePainter(self)
+        option = self._option()
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, option)
+        option.currentText = self.elided_text()
+        painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, option)
+        arrow = self.style().subControlRect(
+            QStyle.ComplexControl.CC_ComboBox, option,
+            QStyle.SubControl.SC_ComboBoxArrow, self)
+        painter.setPen(self.palette().color(self.palette().ColorRole.ButtonText))
+        font = painter.font()
+        font.setPixelSize(15)   # the 11px label size reads as a speck
+        painter.setFont(font)
+        painter.drawText(arrow, Qt.AlignmentFlag.AlignCenter, self.CHEVRON)
 
 
 class ScaledImageLabel(QLabel):

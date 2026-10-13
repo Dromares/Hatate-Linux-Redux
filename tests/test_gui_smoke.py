@@ -1210,13 +1210,13 @@ class TestFilterLabelText(GuiTestCase):
 
     def test_nothing_chosen_reads_as_all(self):
         from gui.filter_bar import summarise_selection
-        self.assertEqual(summarise_selection("Status", None, {"a", "b"}), "Status: all")
+        self.assertEqual(summarise_selection("Status", None, {"a", "b"}), "Status: All")
 
     def test_everything_ticked_also_reads_as_all(self):
         """Saying "2 selected" when both are ticked would suggest a filter
         is doing something when it is not."""
         from gui.filter_bar import summarise_selection
-        self.assertEqual(summarise_selection("Site", {"a", "b"}, {"a", "b"}), "Site: all")
+        self.assertEqual(summarise_selection("Site", {"a", "b"}, {"a", "b"}), "Site: All")
 
     def test_one_choice_is_named(self):
         from gui.filter_bar import summarise_selection
@@ -3650,10 +3650,13 @@ class TestFilteredRowsAreNeverActedOnByAccident(GuiTestCase):
         """A list silently showing a third of itself is how someone
         concludes the app lost their work."""
         self._filter_to_gelbooru()
-        text = self.win.filter_bar.filter_count_label.text()
-        self.assertIn("3", text)
-        self.assertIn("6", text)
-        self.assertIn("hidden", text)
+        # U4 (DAN-1277): the bar reads "3 hidden"; the "3 of 6 ... hidden,
+        # not removed" sentence moved to its tooltip, so the full claim
+        # is still asserted, just on the tooltip.
+        label = self.win.filter_bar.filter_count_label
+        self.assertEqual(label.text(), "3 hidden")
+        self.assertIn("3 of 6", label.toolTip())
+        self.assertIn("hidden, not removed", label.toolTip())
 
     def test_no_count_is_shown_when_nothing_is_filtered(self):
         self.assertEqual(self.win.filter_bar.filter_count_label.text(), "")
@@ -3711,7 +3714,7 @@ class TestFilteredRowsAreNeverActedOnByAccident(GuiTestCase):
         reads "all" and the hidden-row count goes away."""
         self.win.filter_bar._set_all_sites(True)
         self.assertIsNone(self.win.filter_bar._sites)
-        self.assertEqual(self.win.filter_bar.filter_site_button.text(), "Site: all")
+        self.assertEqual(self.win.filter_bar.filter_site_button.text(), "Site: All")
 
     def test_none_then_ticking_one_isolates_it(self):
         """The reason None exists - the quick way to isolate one value."""
@@ -4925,10 +4928,11 @@ class TestPauseIsPersistedWhenTheBatchStops(GuiTestCase):
 
 
 @unittest.skipUnless(HAVE_QT, "PyQt6 not installed")
-class TestPausedDialogContinueButton(GuiTestCase):
-    """The "Continue with other engines" button added to the quota-pause
-    dialog (DAN-486) - wires the click to the actual resume call, same
-    pattern as the existing-files overwrite dialog's three-button test."""
+class TestPausedBannerContinueButton(GuiTestCase):
+    """The "Continue with other engines" action of the quota-pause banner
+    (DAN-486, moved from the dialog to the banner by DAN-1167 / ruling C-4):
+    the click must reach the actual resume call. That the pause raises no
+    modal is pinned in tests/test_quota_pause_banner.py."""
 
     def setUp(self):
         from gui.main_window import MainWindow
@@ -4940,39 +4944,14 @@ class TestPausedDialogContinueButton(GuiTestCase):
         self.win.entries = [unsearched]
         self.win._register_new_entries([unsearched])
 
-    def _trigger(self, choice):
-        """`choice` is "continue" or "ok" - the buttons in the order
-        _on_paused_out_of_quota adds them."""
-        from unittest.mock import MagicMock, patch
-        box = MagicMock()
-        added = []
-        box.addButton.side_effect = lambda *a, **k: added.append(MagicMock()) or added[-1]
-        box.clickedButton.side_effect = lambda: added[{"continue": 0, "ok": 1}[choice]]
-        with patch("gui.main_window.message.build", return_value=box), \
-             patch.object(self.win, "_resume_without_saucenao") as resumed:
-            self.win._on_paused_out_of_quota(1, 1)
-        return resumed
-
-    def test_clicking_continue_resumes(self):
-        resumed = self._trigger("continue")
-        resumed.assert_called_once()
-
-    def test_clicking_ok_does_not_resume(self):
-        resumed = self._trigger("ok")
-        resumed.assert_not_called()
-
     def test_continue_actually_launches_a_search_without_saucenao(self):
         """End to end through the real method, not just that it was
         called: REGRESSION target for the force flag actually reaching
         the worker."""
-        from unittest.mock import MagicMock, patch
-        box = MagicMock()
-        added = []
-        box.addButton.side_effect = lambda *a, **k: added.append(MagicMock()) or added[-1]
-        box.clickedButton.side_effect = lambda: added[0]
-        with patch("gui.main_window.message.build", return_value=box), \
-             patch.object(self.win, "_launch_search_worker") as launch:
-            self.win._on_paused_out_of_quota(1, 1)
+        from unittest.mock import patch
+        self.win._on_paused_out_of_quota(1, 1)
+        with patch.object(self.win, "_launch_search_worker") as launch:
+            self.win._quota_banner_parts['continue_button'].click()
         launch.assert_called_once()
         self.assertTrue(launch.call_args.kwargs.get("force_continue_without_saucenao"))
 

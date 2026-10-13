@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QToolButton,
 )
@@ -28,6 +28,7 @@ from gui import widgets
 
 FILTER_BAND_MARGINS = (16, 10, 16, 10)
 FILTER_BAND_SPACING = 12
+FIELD_TRACKING = 0.04   # tokens.css's `.field` letter-spacing (0.04em)
 
 
 def set_all_checked(actions, checked: bool) -> None:
@@ -40,7 +41,7 @@ def set_all_checked(actions, checked: bool) -> None:
 
 
 def summarise_selection(prefix: str, chosen: Optional[Iterable], present: Iterable) -> str:
-    """The text for a filter button: "Status: all", "Site: Danbooru",
+    """The text for a filter button: "Status: All", "Site: Danbooru",
     "Status: 3 selected".
 
     `chosen` of None means "not filtering", and so does a chosen set that
@@ -50,7 +51,7 @@ def summarise_selection(prefix: str, chosen: Optional[Iterable], present: Iterab
     """
     present = set(present)
     if chosen is None or set(chosen) >= present:
-        return f"{prefix}: all"
+        return f"{prefix}: All"
     chosen = set(chosen)
     if len(chosen) == 1:
         return f"{prefix}: {next(iter(chosen))}"
@@ -60,6 +61,13 @@ def summarise_selection(prefix: str, chosen: Optional[Iterable], present: Iterab
 def describe_hidden(shown: int, total: int) -> str:
     """Says plainly that the rest are hidden, not gone."""
     return f"showing {shown:,} of {total:,} (the rest are hidden, not removed)"
+
+
+def hidden_count_text(shown: int, total: int) -> str:
+    """The right-hand reading in the bar: "3 hidden" (U4). The number is
+    rows the filter is holding back, so it is `total - shown` and nothing
+    else; `describe_hidden`'s longer sentence is its tooltip."""
+    return f"{max(total - shown, 0):,} hidden"
 
 
 class FilterBar(QFrame):
@@ -94,15 +102,16 @@ class FilterBar(QFrame):
         self.filter_text = QLineEdit()
         self.filter_text.setPlaceholderText("filename contains…")
         self.filter_text.setClearButtonEnabled(True)
-        self.filter_text.setMaximumWidth(240)
         self.filter_text.textChanged.connect(lambda _t: self.changed.emit())
-        layout.addWidget(self.filter_text)
+        # Flexes with the row (U4) - it shares the slack with the spacer
+        # before the count, as the mockup's `.field--grow` + spacer do.
+        layout.addWidget(self.filter_text, 1)
 
         # Status and site are multi-select, so they are menus on a button
         # rather than combo boxes - a combo would force one-at-a-time, and
         # "show me everything that failed OR errored" is the common ask.
         self.filter_status_button = QToolButton()
-        self.filter_status_button.setText("Status: all")
+        self.filter_status_button.setText("Status: All")
         self.filter_status_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.filter_status_menu = QMenu(self.filter_status_button)
         self.filter_status_button.setMenu(self.filter_status_menu)
@@ -110,11 +119,11 @@ class FilterBar(QFrame):
             "Show only rows with the statuses you tick. Only the statuses "
             "actually present in the list are offered."
         )
-        self._speak_caps(self.filter_status_button)
+        self._speak_field(self.filter_status_button)
         layout.addWidget(self.filter_status_button)
 
         self.filter_site_button = QToolButton()
-        self.filter_site_button.setText("Site: all")
+        self.filter_site_button.setText("Site: All")
         self.filter_site_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.filter_site_menu = QMenu(self.filter_site_button)
         self.filter_site_button.setMenu(self.filter_site_menu)
@@ -124,28 +133,30 @@ class FilterBar(QFrame):
             f'"{NO_SITE}" collects rows with no match at all - not the same as '
             '"Other", which means a match from a site with no name of its own.'
         )
-        self._speak_caps(self.filter_site_button)
+        self._speak_field(self.filter_site_button)
         layout.addWidget(self.filter_site_button)
 
         self.filter_upscale_button = QToolButton()
-        self.filter_upscale_button.setText("Upscale: all")
+        self.filter_upscale_button.setText("Upscale: All")
         self.filter_upscale_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.filter_upscale_menu = QMenu(self.filter_upscale_button)
         self.filter_upscale_button.setMenu(self.filter_upscale_menu)
         self.filter_upscale_button.setToolTip(
             "Show only rows with the Check for Upscaling verdict you tick."
         )
-        self._speak_caps(self.filter_upscale_button)
+        self._speak_field(self.filter_upscale_button)
         layout.addWidget(self.filter_upscale_button)
 
-        self.filter_clear_button = widgets.pill_button("Clear", self.clear)
-        self.filter_clear_button.setMinimumHeight(widgets.INPUT_MIN_HEIGHT)
+        self.filter_clear_button = widgets.link_button("Clear", self.clear)
         self.filter_clear_button.setToolTip("Show everything again.")
         layout.addWidget(self.filter_clear_button)
 
         layout.addStretch(1)
 
         self.filter_count_label = QLabel("")
+        self.filter_count_label.setObjectName("FilterCount")
+        self.filter_count_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.filter_count_label)
 
         # Chosen values live here rather than being read back off the
@@ -159,12 +170,12 @@ class FilterBar(QFrame):
         self._upscale_actions = {}
 
     @staticmethod
-    def _speak_caps(button):
-        """The page-level mono-caps voice (Q-01 casing, DAN-1161): the
-        stylesheet's `voice="caps"` face plus an AllUppercase QFont, so
-        `.text()` and the accessible name stay "Status: all"."""
-        button.setProperty('voice', 'caps')
-        widgets.uppercase_voice(button)
+    def _speak_field(button):
+        """The mockup's `.field--button` face: mono and lightly tracked but
+        sentence case - a combo shows state, not a command, so it is not
+        given `widgets.uppercase_voice` (DAN-1275, correcting Q-01)."""
+        button.setProperty('voice', 'field')
+        widgets.apply_tracking(button, FIELD_TRACKING)
 
     # -- what the owner reads -------------------------------------------
     def current_filter(self) -> EntryFilter:
@@ -243,7 +254,8 @@ class FilterBar(QFrame):
             "Upscale", self._upscale_verdicts, upscale_verdicts_present(self._entries()),
         ))
         self.filter_clear_button.setEnabled(active)
-        self.filter_count_label.setText("" if not active else describe_hidden(shown, total))
+        self.filter_count_label.setText("" if not active else hidden_count_text(shown, total))
+        self.filter_count_label.setToolTip("" if not active else describe_hidden(shown, total))
 
     def clear(self) -> None:
         """Back to showing everything, as one change rather than two.
