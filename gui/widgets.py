@@ -60,6 +60,8 @@ RUN_BANNER_MARGINS = (24, 24, 24, 24)   # its `padding: var(--space-5)`
 RUN_BANNER_GAP = 24            # its `gap: var(--space-5)` between glyph and text
 RUN_BANNER_GLYPH_COLUMN = 17   # puts the prose 66px in from the frame edge, as the mockup does
 RUN_BANNER_DISCARD_TRACKING = 0.06   # `.run-banner__discard`'s letter-spacing
+EMPTY_PROSE_LEADING = 21   # the line pitch `.drop-copy` is drawn at (15px type, 1.4 lines)
+EMPTY_PROSE_WIDTH = 560    # `.drop-copy`'s max-width
 RUN_BANNER_PROSE_LEADING = 20   # the line pitch the mockup draws `.run-banner__detail` at
 RUN_BANNER_ACTIONS_GAP = 4      # `.run-banner__actions { margin-top: var(--space-1) }`, on top of the column's 8
 SURVIVED_GLYPH_BOX = 42   # the mockup's boxed ✕: a 32px glyph in a hairline square
@@ -246,6 +248,7 @@ class LeadedLabel(WrappingLabel):
         block = QTextBlockFormat()
         block.setLineHeight(
             float(self._leading), QTextBlockFormat.LineHeightTypes.FixedHeight.value)
+        block.setAlignment(self.alignment() & Qt.AlignmentFlag.AlignHorizontal_Mask)
         cursor = QTextCursor(doc)
         cursor.select(QTextCursor.SelectionType.Document)
         cursor.mergeBlockFormat(block)
@@ -421,6 +424,25 @@ def meta_line(items, centered=True, anchor=None):
     return row, labels
 
 
+def empty_prose(text):
+    """The empty state's explanatory paragraph: the mockup's `.drop-copy`.
+
+    Centred, 560px wide and 21px-leaded, in a stretch row. The fixed width
+    is deliberate - see MainWindow._build_drop_zone for why a word-wrapped
+    label is not handed an alignment in a box layout instead. Returns the
+    label and the row to add to the layout.
+    """
+    body = LeadedLabel(EMPTY_PROSE_LEADING, text)
+    body.setObjectName('Hint')
+    body.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    body.setFixedWidth(EMPTY_PROSE_WIDTH)
+    row = QHBoxLayout()
+    row.addStretch(1)
+    row.addWidget(body)
+    row.addStretch(1)
+    return body, row
+
+
 def nothing_survived(meta_items, below_weight):
     """The Queue's "Nothing survived." variant of the empty state (S-05).
 
@@ -447,32 +469,24 @@ def nothing_survived(meta_items, below_weight):
     glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
     glyph.setFixedSize(SURVIVED_GLYPH_BOX, SURVIVED_GLYPH_BOX)
     layout.addWidget(glyph, 0, Qt.AlignmentFlag.AlignHCenter)
-    layout.addSpacing(16)
+    layout.addSpacing(10)
 
     title = display_title("Nothing survived.")
     title.setAlignment(Qt.AlignmentFlag.AlignCenter)
     layout.addWidget(title)
-    layout.addSpacing(6)
+    layout.addSpacing(10)
 
-    body = hint(
+    body, body_row = empty_prose(
         "Hatate stopped without a clean exit, and the session it had saved was "
         "empty or could not be read, so there is no queue to restore. Anything "
         "already sent to Hydrus is unaffected."
     )
-    body.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    # A fixed width inside a stretch row - see MainWindow._build_drop_zone
-    # for why a word-wrapped label is not handed an alignment instead.
-    body.setFixedWidth(560)
-    body_row = QHBoxLayout()
-    body_row.addStretch(1)
-    body_row.addWidget(body)
-    body_row.addStretch(1)
     layout.addLayout(body_row)
     layout.addSpacing(12)
 
     meta, meta_labels = meta_line(meta_items)
     layout.addWidget(meta)
-    layout.addSpacing(18)
+    layout.addSpacing(22)
 
     new_search = pill_button("Start new search", primary=True)
     crash_log = pill_button("View crash log")

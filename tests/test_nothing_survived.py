@@ -207,6 +207,58 @@ class TestActionGap(_SurvivedWindow):
             self.assertEqual(gap, 12, (left.text(), right.text()))
 
 
+class TestEmptyRhythm(_SurvivedWindow):
+    """DAN-1395: the vertical rhythm of both empty states against the mockup
+    (`.drop-frame` gap 16 + the actions' 12 above; `.drop-copy` 560 wide,
+    21px-leaded). Measured as gaps between widgets on the real window, in
+    both themes; the pixel diff against the mockup is in the PR. The gaps
+    are the layout's own 6px between items plus each `addSpacing`, which is
+    why they read 6 over the spacers (10, 24; 10, 10, 12, 22)."""
+
+    @staticmethod
+    def _gap(win, above, below):
+        bottom = above.mapTo(win, above.rect().bottomLeft()).y()
+        top = below.mapTo(win, below.rect().topLeft()).y()
+        return top - bottom - 1
+
+    def _parts(self, win):
+        page = self._page(win)
+        return (page.findChild(QLabel, "DisplayTitle"),
+                page.findChild(widgets.LeadedLabel, "Hint"),
+                page.findChildren(QPushButton)[0])
+
+    def test_the_prose_is_the_mockups_measure_and_leading(self):
+        for unclean in (False, True):
+            for mode in MODES:
+                with self.subTest(unclean=unclean, mode=mode):
+                    _title, prose, _button = self._parts(self._window(mode, unclean=unclean))
+                    self.assertEqual(prose.width(), widgets.EMPTY_PROSE_WIDTH)
+                    lines = prose.height() // widgets.EMPTY_PROSE_LEADING
+                    self.assertEqual(prose.height(), lines * widgets.EMPTY_PROSE_LEADING)
+                    self.assertGreaterEqual(lines, 3)
+
+    def test_the_drop_zone_gaps(self):
+        for mode in MODES:
+            with self.subTest(mode=mode):
+                title, prose, button = self._parts(self._window(mode, unclean=False))
+                win = title.window()
+                self.assertEqual(
+                    (self._gap(win, title, prose), self._gap(win, prose, button)),
+                    (16, 30))
+
+    def test_the_nothing_survived_gaps(self):
+        for mode in MODES:
+            with self.subTest(mode=mode):
+                win = self._window(mode)
+                glyph = self._page(win).findChild(QLabel, "SurvivedGlyph")
+                title, prose, button = self._parts(win)
+                meta = win._nothing_survived_parts['meta']
+                self.assertEqual(
+                    (self._gap(win, glyph, title), self._gap(win, title, prose),
+                     self._gap(win, prose, meta), self._gap(win, meta, button)),
+                    (16, 16, 18, 28))
+
+
 class TestBoxedGlyph(_SurvivedWindow):
     def test_it_is_a_boxed_cross(self):
         for mode in MODES:
