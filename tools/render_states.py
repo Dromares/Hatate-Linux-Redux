@@ -172,9 +172,16 @@ class _Renderer:
     def _build(self, mode: str, entries=None, unclean: bool = False, corrupt_session: bool = False):
         from unittest.mock import patch
 
+        from gui import theme
         from gui.main_window import MainWindow
 
         self._fresh_config()
+        # main.py's order: the stylesheet is live BEFORE the window exists.
+        # Qt measures a widget against the sheet in effect when it is built,
+        # so a window built bare and themed afterwards keeps pre-theme size
+        # hints (too small for the mono-caps buttons) and the shot invents
+        # clipping the shipped app does not have.
+        self.app.setStyleSheet(theme.stylesheet(mode))
         if corrupt_session:
             from core import session
 

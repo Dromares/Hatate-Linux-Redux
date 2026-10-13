@@ -5460,23 +5460,19 @@ class TestDynamicShortcutLabels(GuiTestCase):
         QApplication.processEvents()
 
     def test_button_labels_show_effective_bindings(self):
-        """Each decision button shows its key in the label, e.g. 'Send to Hydrus (Return)'."""
-        from PyQt6.QtWidgets import QPushButton
-        send_btn = None
-        for btn in self.win.review_page.findChildren(QPushButton):
-            if btn.text().startswith("Send to Hydrus"):
-                send_btn = btn
-                break
-        self.assertIsNotNone(send_btn, "Send to Hydrus button not found")
-        self.assertIn("Return", send_btn.text(),
-                      f"Button should show '(Return)' but shows '{send_btn.text()}'")
+        """Each decision button shows its key as a keycap (DAN-1175 / V-10):
+        the label stays 'Send to Hydrus', the key is the cap beside it."""
+        send_btn = self.win.review_send_btn
+        self.assertEqual(send_btn.text(), "Send to Hydrus")
+        self.assertEqual(send_btn.keycap.text(), "Return")
+        self.assertTrue(send_btn.keycap.isVisible())
 
     def test_position_strip_hint_uses_dynamic_bindings(self):
         """The position strip hint is built from resolved bindings, not a literal."""
         # Default hint should contain J, K, N, Space, C (or whatever the defaults are)
         self.win._refresh_review_strip()
         QApplication.processEvents()
-        hint_text = self.win.review_position_label.text()
+        hint_text = self.win.review_hint_bar.plain_text()
         # Should contain the dynamic hint, not the old hardcoded one
         self.assertIn("move", hint_text.lower())
         self.assertIn("unreviewed", hint_text.lower())
@@ -5499,23 +5495,13 @@ class TestDynamicShortcutLabels(GuiTestCase):
         QApplication.processEvents()
 
         # Check position strip hint now shows F7
-        hint_text = self.win.review_position_label.text()
+        hint_text = self.win.review_hint_bar.plain_text()
         self.assertIn("F7", hint_text,
                       f"Position strip should show 'F7' after rebind, but shows '{hint_text}'")
 
-        # Check the "Next ▸" button label shows F7. Match the "Next ▸"
-        # prefix specifically - "Next unreviewed" also starts with "Next"
-        # and is built first, so a bare "Next" prefix matches the wrong
-        # button.
-        from PyQt6.QtWidgets import QPushButton
-        next_btn = None
-        for btn in self.win.review_page.findChildren(QPushButton):
-            if btn.text().startswith("Next ▸"):
-                next_btn = btn
-                break
-        self.assertIsNotNone(next_btn, "Next button not found")
-        self.assertIn("F7", next_btn.text(),
-                      f"Next button should show '(F7)' but shows '{next_btn.text()}'")
+        # ... and so does the "Next ▸" button's keycap.
+        self.assertEqual(self.win.review_next_btn.keycap.text(), "F7")
+        self.assertEqual(self.win.review_next_btn.text(), "Next ▸")
 
     def test_shortcuts_dialog_shows_all_actions_with_bindings(self):
         """The Keyboard dialog lists every action with its current binding."""
