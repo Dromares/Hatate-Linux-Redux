@@ -123,6 +123,56 @@ class WrappingLabel(QLabel):
             self.setMinimumHeight(needed)
 
 
+def _banner_shell(glyph_text, head_text):
+    """The frame both Queue banners share (S-01, S-03): a bracketed card
+    with a status glyph, a mono kicker, wrapped prose, a meta-line slot,
+    and an empty row for the actions, which each banner fills itself.
+
+    Both keep the `RunBanner*` object names, so one set of QSS rules draws
+    them and they cannot drift apart.
+    """
+    frame = QFrame()
+    frame.setObjectName('RunBanner')
+    layout = QHBoxLayout(frame)
+    layout.setContentsMargins(*RUN_BANNER_MARGINS)
+    layout.setSpacing(CARD_SPACING)
+    layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+    glyph = QLabel(glyph_text)
+    glyph.setObjectName('RunBannerGlyph')
+    layout.addWidget(glyph, 0, Qt.AlignmentFlag.AlignTop)
+
+    text_col = QVBoxLayout()
+    text_col.setSpacing(8)
+    # The kicker is sentence case with the capitals in the font, as
+    # `section_label` does: the string stays readable to anything that
+    # reads `.text()`.
+    head = QLabel(head_text)
+    head.setObjectName('RunBannerHead')
+    uppercase_voice(head)
+    text_col.addWidget(head)
+    body = WrappingLabel()
+    body.setObjectName('RunBannerBody')
+    body.setMaximumWidth(RUN_BANNER_PROSE_WIDTH)
+    text_col.addWidget(body)
+    meta_slot = QVBoxLayout()
+    meta_slot.setContentsMargins(0, 0, 0, 0)
+    text_col.addLayout(meta_slot)
+    actions = QHBoxLayout()
+    actions.setSpacing(12)
+    text_col.addLayout(actions)
+    layout.addLayout(text_col, 1)
+
+    Brackets(frame)
+    return frame, {
+        'glyph': glyph,
+        'head': head,
+        'body': body,
+        'meta_slot': meta_slot,
+        'actions': actions,
+    }
+
+
 def run_banner():
     """The interrupted-run notice (DAN-660, S-01): a bracketed frame with a
     status glyph, a kicker, reassuring prose, a meta line, and three actions
@@ -134,41 +184,15 @@ def run_banner():
     its own existing behaviour. The meta line is added into `meta_slot`
     when it is known, because its figures come from what is on disk then.
     """
-    frame = QFrame()
-    frame.setObjectName('RunBanner')
-    layout = QHBoxLayout(frame)
-    layout.setContentsMargins(*RUN_BANNER_MARGINS)
-    layout.setSpacing(CARD_SPACING)
-    layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-    glyph = QLabel(theme.status_glyph('poor'))
-    glyph.setObjectName('RunBannerGlyph')
-    layout.addWidget(glyph, 0, Qt.AlignmentFlag.AlignTop)
-
-    text_col = QVBoxLayout()
-    text_col.setSpacing(8)
-    # The kicker is sentence case with the capitals in the font, as
-    # `section_label` does: the string stays readable to anything that
-    # reads `.text()`.
-    head = QLabel("Run interrupted \u2014 partial results survived")
-    head.setObjectName('RunBannerHead')
-    uppercase_voice(head)
-    text_col.addWidget(head)
-    body = WrappingLabel()
-    body.setObjectName('RunBannerBody')
-    body.setMaximumWidth(RUN_BANNER_PROSE_WIDTH)
-    text_col.addWidget(body)
-    meta_slot = QVBoxLayout()
-    meta_slot.setContentsMargins(0, 0, 0, 0)
-    text_col.addLayout(meta_slot)
+    frame, parts = _banner_shell(
+        theme.status_glyph('poor'), "Run interrupted \u2014 partial results survived")
+    actions = parts.pop('actions')
 
     # The action hierarchy is unchanged from DAN-660 and is not to be
     # restyled for the frame: Resume is the one primary, and "Discard" is
     # deliberately the quietest element on the banner, not a stamped
     # button - error-cost asymmetry: a wrong delete costs more than a
     # wrong tag, so it never gets primary-button weight.
-    actions = QHBoxLayout()
-    actions.setSpacing(12)
     resume_button = pill_button("Resume Queue", primary=True)
     actions.addWidget(resume_button)
     crash_log_button = pill_button("View Crash Log")
@@ -177,19 +201,32 @@ def run_banner():
     discard_label.setObjectName('RunBannerDiscard')
     actions.addWidget(discard_label)
     actions.addStretch(1)
-    text_col.addLayout(actions)
-    layout.addLayout(text_col, 1)
+    parts.update(resume_button=resume_button, crash_log_button=crash_log_button,
+                 discard_label=discard_label)
+    return frame, parts
 
-    Brackets(frame)
-    return frame, {
-        'glyph': glyph,
-        'head': head,
-        'body': body,
-        'meta_slot': meta_slot,
-        'resume_button': resume_button,
-        'crash_log_button': crash_log_button,
-        'discard_label': discard_label,
-    }
+
+def quota_pause_banner():
+    """The quota-paused notice (DAN-1167, S-03): the interrupted banner's
+    frame, with `\u2026` for its glyph (a run waiting, not a run hurt) and two
+    actions - reading what is waiting, which is the primary, and carrying
+    on without SauceNAO.
+
+    It replaces the modal this pause used to raise (ruling C-4 on
+    DAN-1155): a run left alone for hours must not sit waiting on a click,
+    and a banner is still there when the window is next looked at - or
+    relaunched. Same contract as `run_banner`: the caller fills it in.
+    """
+    frame, parts = _banner_shell(
+        "\u2026", "Run paused \u2014 SauceNAO's daily quota is exhausted")
+    actions = parts.pop('actions')
+    review_button = pill_button("Review the waiting \u2192", primary=True)
+    actions.addWidget(review_button)
+    continue_button = pill_button("Continue with other engines")
+    actions.addWidget(continue_button)
+    actions.addStretch(1)
+    parts.update(review_button=review_button, continue_button=continue_button)
+    return frame, parts
 
 
 def meta_line(items, centered=True):
