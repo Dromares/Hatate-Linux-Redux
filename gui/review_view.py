@@ -274,7 +274,12 @@ class ReviewViewMixin:
         self.wipe_slider.setValue(50)
         self.wipe_slider.valueChanged.connect(
             lambda v: self.review_wipe.set_position(v / 100.0))
-        left, right = (widgets.section_label(name) for name in ("Local", "Match"))
+        # Not widgets.section_label(): these are not numbered sections, and
+        # the numbering test counts every SectionLabel on the page.
+        left, right = QLabel("Local"), QLabel("Match")
+        for label in (left, right):
+            label.setObjectName("WipeEndLabel")
+            widgets.uppercase_voice(label)
         layout.addWidget(left)
         layout.addWidget(self.wipe_slider, 1)
         layout.addWidget(right)

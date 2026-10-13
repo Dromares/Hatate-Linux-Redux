@@ -382,7 +382,7 @@ def stylesheet(mode):
        widgets.section_label() sets QFont.AllUppercase and the tracking
        in Python. ink_65 rather than the mockup's decorative ink_45: it is
        text, so it must clear 4.5:1. ---- */
-    QLabel#SectionLabel {{
+    QLabel#SectionLabel, QLabel#WipeEndLabel {{
             font-family: {font_mono};
             font-size: 11px;
             color: {ink_65};
