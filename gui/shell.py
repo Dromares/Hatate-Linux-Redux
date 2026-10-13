@@ -196,7 +196,7 @@ class ShellMixin:
         self.ghost = central
         root = QVBoxLayout(central)
         root.setContentsMargins(*widgets.SHELL_MARGINS)
-        root.setSpacing(widgets.PAGE_SPACING)
+        root.setSpacing(widgets.SHELL_SPACING)
 
         root.addWidget(self._build_top_bar())
         root.addWidget(self._build_run_strip())
