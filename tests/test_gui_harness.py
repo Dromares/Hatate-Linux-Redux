@@ -57,6 +57,7 @@ except ImportError:  # pragma: no cover - depends on environment
 import requests
 
 _app = None
+_app_keepalive = None  # see make_themed_window
 
 
 def setUpModule():
@@ -197,6 +198,15 @@ def make_themed_window(testcase, mode="dark"):
     from gui.main_window import MainWindow
 
     app = QApplication.instance() or QApplication([])
+    # DAN-1351: PyQt owns a QApplication it created, so the last Python
+    # reference decides when it is destroyed. A module without its own
+    # setUpModule (most of the ones that import this helper) held none -
+    # the caller's ``_app, win = ...`` is a local - so the app was torn
+    # down when the first test returned and a second one built by the next
+    # test or module. Rebuilding a QApplication in-process corrupts Qt's
+    # global state, and a later SettingsDialog segfaulted in QLabel.text().
+    global _app_keepalive
+    _app_keepalive = app
     register_fonts()
     # Registered first so it runs last: the delete below is only queued, and
     # an undelivered one leaves the window alive for every later test's
@@ -533,3 +543,34 @@ class TestNoNetworkGuardIsLive(unittest.TestCase):
         # raise AssertionError, not ConnectionError, if it had leaked)
         import inspect
         self.assertFalse(inspect.getsource(requests.get).__contains__("network attempt"))
+
+
+@unittest.skipUnless(HAVE_QT, "PyQt6 not installed")
+class TestThemedWindowKeepsTheApplicationAlive(unittest.TestCase):
+    """DAN-1351: make_themed_window must not let the QApplication it creates
+    be garbage-collected when the calling test returns. Run in a fresh
+    interpreter, because this process already holds an application."""
+
+    SCRIPT = (
+        "import gc, os, unittest\n"
+        "from tests import _path\n"
+        "from PyQt6.QtWidgets import QApplication\n"
+        "from tests.test_gui_harness import make_themed_window\n"
+        "class T(unittest.TestCase):\n"
+        "    def test_a(self):\n"
+        "        _app, win = make_themed_window(self)\n"
+        "r = unittest.TextTestRunner(stream=open(os.devnull, 'w'))\n"
+        "res = r.run(unittest.defaultTestLoader.loadTestsFromTestCase(T))\n"
+        "assert res.wasSuccessful(), res.errors\n"
+        "gc.collect()\n"
+        "assert QApplication.instance() is not None, 'QApplication was destroyed'\n"
+    )
+
+    def test_application_survives_the_test_that_built_the_window(self):
+        import subprocess
+        import sys
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+        root = str(pathlib.Path(__file__).resolve().parent.parent)
+        proc = subprocess.run([sys.executable, "-c", self.SCRIPT], cwd=root, env=env,
+                              capture_output=True, text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
