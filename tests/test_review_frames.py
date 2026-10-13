@@ -149,6 +149,14 @@ class TestFramesAndCaptions(_FrameCase):
         self.assertIn("ranking, not measured", win.matched_caption.text())
         self.assertIn("~", win.matched_caption.text())
 
+    def test_the_fixture_window_starts_no_network_fetch(self):  # DAN-1381
+        """Selecting the fixture's row used to start a real CandidateFetchWorker
+        against danbooru.donmai.us/posts/0..2; posts/0 is dead, so the worker
+        dropped that candidate mid-test and the caption assertions raced it."""
+        win = self._review_window()
+        self.assertIsNone(win.candidate_worker)
+        self.assertEqual(len(win.entries[0].candidates), 3)
+
     def test_no_match_says_so_in_the_caption(self):
         win = self._review_window(candidates=0)
         self.assertEqual(win.matched_caption.text(), "Match — none")

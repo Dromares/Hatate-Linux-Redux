@@ -53,6 +53,13 @@ class _ReviewCase(GuiTestCase):
         patcher = mock.patch("gui.main_window.message.information")
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Selecting a row starts a real CandidateFetchWorker, which fetches the
+        # fixtures' danbooru.donmai.us/posts/N pages over the live network and,
+        # when posts/0 comes back dead, drops that candidate out from under the
+        # test (DAN-1381). Review's pages are driven from the entry we hand it.
+        fetch = mock.patch("gui.main_window.MainWindow._ensure_candidate_loaded")
+        fetch.start()
+        self.addCleanup(fetch.stop)
 
     def _review_window(self, mode="dark", candidates=3, reviewed=False, rows=1):
         _app, win = make_themed_window(self, mode)
