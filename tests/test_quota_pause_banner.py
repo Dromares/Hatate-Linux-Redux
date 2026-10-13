@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from tests import _path  # noqa: F401  (puts the project root on sys.path)
+from tests._qt_app import ensure_app
 
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox, QPushButton
@@ -53,7 +54,7 @@ class _PausedWindow(GuiTestCase):
         disk (the relaunch path); otherwise the pause is fired live."""
         from gui import main_window as mw
         from gui.fonts import register_fonts
-        app = QApplication.instance() or QApplication([])
+        app = ensure_app()
         register_fonts()
         app.setStyleSheet(theme.stylesheet(mode))
         self.addCleanup(lambda: app.setStyleSheet(""))

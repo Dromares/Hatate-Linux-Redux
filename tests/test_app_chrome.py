@@ -109,6 +109,45 @@ class TestPageGutter(_ChromeCase):
         self.assertEqual(self._at(win, strip).x(), 32)
 
 
+class TestPageRhythm(_ChromeCase):
+    """DAN-1360: the vertical half of U3 - 24px above the top bar, 16px
+    between it, the run strip and the page, as tokens.css's `.app` has it.
+
+    The mockup edges (queue-interrupted-paused-1440.png @ b40a430, dark,
+    banner present) are tab row 52, run strip 108, banner top rule 236;
+    the tolerance is the issue's 2px.
+    """
+
+    MOCKUP = {"tab_row": 52, "strip": 108, "banner": 236}
+    TOLERANCE = 2
+
+    def _edges(self, win):
+        win.quota_banner.setVisible(True)
+        self._settle()
+        return {
+            "tab_row": self._at(win, win.mode_switch).y(),
+            "strip": self._at(win, win.run_strip).y(),
+            "banner": self._at(win, win.quota_banner).y(),
+        }
+
+    def test_top_of_page_edges_are_within_2px_of_the_mockup(self):
+        win = self._window("dark")
+        got = self._edges(win)
+        for name, want in self.MOCKUP.items():
+            with self.subTest(edge=name):
+                self.assertLessEqual(abs(got[name] - want), self.TOLERANCE,
+                                     f"{name} top is at y={got[name]}, the mockup has {want}")
+
+    def test_the_chrome_is_the_same_height_on_every_screen(self):
+        win = self._window("dark")
+        for key in ("review", "activity"):
+            with self.subTest(screen=key):
+                win.set_mode(key)
+                self._settle()
+                self.assertEqual(self._at(win, win.mode_switch).y(), self.MOCKUP["tab_row"])
+                self.assertEqual(self._at(win, win.run_strip).y(), self.MOCKUP["strip"])
+
+
 class TestMenuBar(_ChromeCase):
     """U2: 13px text, 28px with a hairline below."""
 

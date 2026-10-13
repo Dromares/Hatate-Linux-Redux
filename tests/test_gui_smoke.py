@@ -60,7 +60,8 @@ def setUpModule():
     """One QApplication for the whole module - Qt allows only one."""
     global _app
     if HAVE_QT:
-        _app = QApplication.instance() or QApplication([])
+        from ._qt_app import ensure_app
+        _app = ensure_app()
 
 
 class GuiTestCase(unittest.TestCase):

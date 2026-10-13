@@ -38,6 +38,7 @@ import uuid
 from unittest.mock import patch
 
 from . import _path  # noqa: F401  (sys.path + throwaway XDG_CONFIG_HOME)
+from ._qt_app import ensure_app
 
 # Must be set before PyQt6 is imported, or Qt tries to reach a display.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -589,7 +590,7 @@ class TestTagBandInstrumentationIsNotInflated(unittest.TestCase):
 
 
 try:
-    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtWidgets import QApplication  # noqa: F401  (availability probe)
     HAVE_QT = True
 except ImportError:  # pragma: no cover - depends on environment
     HAVE_QT = False
@@ -601,7 +602,7 @@ def setUpModule():
     """One QApplication for the whole module - Qt allows only one."""
     global _app
     if HAVE_QT:
-        _app = QApplication.instance() or QApplication([])
+        _app = ensure_app()
 
 
 @unittest.skipUnless(HAVE_QT, "PyQt6 not installed")

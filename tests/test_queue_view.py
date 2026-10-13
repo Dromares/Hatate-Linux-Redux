@@ -12,10 +12,11 @@ from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from tests import _path  # noqa: F401  (puts the project root on sys.path)
+from tests._qt_app import ensure_app
 
 from PyQt6.QtCore import QRect, QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter, QPalette
-from PyQt6.QtWidgets import QApplication, QStyle, QStyleOptionViewItem
+from PyQt6.QtWidgets import QStyle, QStyleOptionViewItem
 
 from core.models import ImageEntry, MatchCandidate, MatchStatus
 from gui import theme
@@ -30,7 +31,7 @@ _APP = None
 
 def _app():
     global _APP
-    _APP = QApplication.instance() or QApplication([])
+    _APP = ensure_app()
     return _APP
 
 
