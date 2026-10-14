@@ -192,6 +192,32 @@ class _UppercaseChecks:
         self.assertEqual(band.filter_status_button.text(), "Status: All")
         self.assertEqual(band.filter_clear_button.text(), "Clear")
 
+    def test_filter_text_field_speaks_the_field_voice(self):  # DAN-1462
+        from PyQt6.QtGui import QPalette
+        from PyQt6.QtWidgets import QLineEdit
+        from tests.test_queue_view import _contrast
+        band = self.win.filter_bar
+        field = band.filter_text
+        font = _font(field)
+        self.assertEqual(font.family(), "JetBrains Mono")
+        self.assertEqual(font.pixelSize(), 11)
+        self.assertGreater(font.letterSpacing(), 100)
+        self.assertNotEqual(font.capitalization(), CAPS)
+        # Same 32px row as the combos beside it, so the bar mixes no voices.
+        self.assertEqual(field.sizeHint().height(), 32)
+        self.assertEqual(field.sizeHint().height(), band.filter_status_button.sizeHint().height())
+        self.assertLessEqual(band.sizeHint().height(), 61)
+        self.assertEqual(field.placeholderText(), "Filename contains…")
+        # Typed text must stay readable on the page it sits on.
+        text = field.palette().color(QPalette.ColorRole.Text).name()
+        page = theme.palette(self.MODE)["page"]
+        self.assertGreaterEqual(_contrast(text, page), 4.5)
+        # The global input rule is untouched: other line edits keep 14px.
+        other = QLineEdit(self.win)
+        other.setProperty("voice", None)
+        self.assertEqual(_font(other).pixelSize(), 14)
+        self.assertGreater(other.sizeHint().height(), 40)
+
 
 class _MetaLineChecks:
     """DAN-1394: the run banner's meta line is `--text-micro`, 10px."""

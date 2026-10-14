@@ -100,7 +100,8 @@ class FilterBar(QFrame):
         layout.addWidget(self.filter_label)
 
         self.filter_text = QLineEdit()
-        self.filter_text.setPlaceholderText("filename contains…")
+        self.filter_text.setPlaceholderText("Filename contains…")
+        self._speak_field(self.filter_text)
         self.filter_text.setClearButtonEnabled(True)
         self.filter_text.textChanged.connect(lambda _t: self.changed.emit())
         # Flexes with the row (U4) - it shares the slack with the spacer
@@ -171,8 +172,8 @@ class FilterBar(QFrame):
 
     @staticmethod
     def _speak_field(button):
-        """The mockup's `.field--button` face: mono and lightly tracked but
-        sentence case - a combo shows state, not a command, so it is not
+        """The mockup's `.field` face (the combos' `.field--button` too): mono and
+        lightly tracked but sentence case - a combo shows state, not a command, so it is not
         given `widgets.uppercase_voice` (DAN-1275, correcting Q-01)."""
         button.setProperty('voice', 'field')
         widgets.apply_tracking(button, FIELD_TRACKING)
