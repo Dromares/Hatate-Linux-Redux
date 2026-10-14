@@ -68,8 +68,8 @@
 # usually carry no commit of their own - the work shipped under the PARENT's
 # id - so the subject grep reports a false NONE FOUND (103 of them in the
 # DAN-1442 sweep, each hand-checked). When the grep misses, the script reads
-# the ticket's own description and comments and counts it as PASS only if the
-# evidence names BOTH a PR number and a commit SHA and the target ref agrees:
+# the ticket's own description and comments and counts it as PASS only if one
+# line of it names BOTH a PR number and a commit SHA and the target ref agrees:
 #   - the ref has a commit for that PR: a squash subject ending "(#N)" or a
 #     "Merge pull request #N from ..." merge commit (call it M), and
 #   - the cited SHA is M itself or one of the commits M brought in
@@ -219,7 +219,19 @@ merged_pr_evidence() {
     text="$(
       for path in "" "/comments"; do
         curl -sf -H "Authorization: Bearer $PAPERCLIP_API_KEY" "$base/api/issues/$id$path" || true
-      done
+      done | python3 -I -c '
+import json, sys
+dec = json.JSONDecoder(strict=False)
+raw, pos = sys.stdin.read(), 0
+while pos < len(raw):
+    while pos < len(raw) and raw[pos].isspace():
+        pos += 1
+    if pos >= len(raw):
+        break
+    obj, pos = dec.raw_decode(raw, pos)
+    for item in obj if isinstance(obj, list) else [obj]:
+        print(item.get("description") or item.get("body") or "")
+' 2>/dev/null || true
     )"
   fi
   [[ -n "$text" ]] || return 0
@@ -231,10 +243,18 @@ text = sys.stdin.read()
 def git(*args):
     return subprocess.run(["git", *args], capture_output=True, text=True)
 
-prs = sorted(set(re.findall(r"(?:#|pull/)(\d+)\b", text)), key=int)
-shas = sorted(set(re.findall(r"\b[0-9a-f]{7,40}\b", text)))
-if not prs or not shas:
+# PR number and SHA must sit on the same line, so a stray "#2" in one
+# paragraph and an unrelated hash in another cannot pair up.
+pairs = []
+for line in text.splitlines():
+    line_prs = set(re.findall(r"(?:#|pull/)(\d+)\b", line))
+    line_shas = set(re.findall(r"\b[0-9a-f]{7,40}\b", line))
+    if line_prs and line_shas:
+        pairs.append((line_prs, line_shas))
+if not pairs:
     sys.exit(0)
+prs = sorted(set().union(*(p for p, _ in pairs)), key=int)
+shas = sorted(set().union(*(s for _, s in pairs)))
 resolved = {}
 for sha in shas:
     full = git("rev-parse", "--verify", "--quiet", sha + "^{commit}").stdout.strip()
@@ -251,7 +271,8 @@ for pr in prs:
             continue
         brought = set(git("rev-list", m + "^1.." + m).stdout.split()) | {m}
         for sha, full in resolved.items():
-            if full in brought and git("merge-base", "--is-ancestor", full, ref).returncode == 0:
+            paired = any(pr in p and sha in s for p, s in pairs)
+            if paired and full in brought and git("merge-base", "--is-ancestor", full, ref).returncode == 0:
                 print(pr, m[:7], sha, subject)
                 sys.exit(0)
 ' "$ref" 2>/dev/null || true
