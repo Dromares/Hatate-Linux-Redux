@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QToolButton
 
 from core.config import Settings
 from gui import shell, theme, widgets
-from gui.activity_view import LOG_GLYPH_PX
+from gui.activity_view import ACTIVITY_BODY_GAP, LOG_GLYPH_PX
 from gui.settings_dialog import SettingsDialog
 from tests.test_gui_harness import make_themed_window
 from tests.test_gui_smoke import GuiTestCase
@@ -267,6 +267,45 @@ class _ActivityChecks:
         self.assertAlmostEqual(first.height(), 33, delta=1)
         self.assertEqual(row.spacing(), 8)
         self.assertEqual(second.x() - (first.x() + first.width()), 8)
+
+    def test_on_chips_are_bold_and_off_chips_regular(self):  # DAN-1463 #2
+        self.win.set_mode("activity")
+        row = self.win.engine_chip_row
+        chips = [row.itemAt(i).widget() for i in range(row.count())]
+        on = [c for c in chips if c.objectName() == "EngineChipOn"]
+        off = [c for c in chips if c.objectName() == "EngineChipOff"]
+        self.assertTrue(on and off)
+        for chip in on:
+            with self.subTest(chip=chip.text()):
+                self.assertEqual(_font(chip).weight(), QFont.Weight.Bold)
+        for chip in off:
+            with self.subTest(chip=chip.text()):
+                self.assertEqual(_font(chip).weight(), QFont.Weight.Normal)
+
+    def test_vertical_rhythm_follows_the_mockups_spacing_tokens(self):  # DAN-1463 #1
+        self.win.set_mode("activity")
+        QApplication.processEvents()
+        win = self.win
+
+        def top(w):
+            return w.mapTo(win, w.rect().topLeft()).y()
+
+        def bottom(w):
+            return top(w) + w.height()
+
+        row = win.engine_chip_row
+        last_chip = row.itemAt(row.count() - 1).widget()
+        # `.engine-row { margin-bottom: var(--space-4) }`
+        self.assertGreaterEqual(top(win.engine_pipeline) - bottom(last_chip), 16)
+        # The Paced line's `margin-bottom: var(--space-4)`; the box gap reads
+        # 9px short of the ink gap the mockup is measured by (line-height).
+        parser = next(b for b in win.findChildren(QPushButton)
+                      if b.text() == "Parser health…")
+        self.assertGreaterEqual(top(parser) - bottom(win.engine_summary), 18)
+        # `.activity-body { gap: var(--space-6) }` between the two sections.
+        engines = win.engine_summary.parentWidget()
+        log = win.log_view.parentWidget()
+        self.assertEqual(top(log) - bottom(engines), ACTIVITY_BODY_GAP)
 
     def test_pipeline_line_sits_below_the_chips_in_mono_with_bold_names(self):  # DAN-1392 #2
         self.win.set_mode("activity")

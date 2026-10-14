@@ -39,6 +39,13 @@ TAIL_INTERVAL_MS = 2000
 # sizes that put all three at ~11px of ink in the 36px box.
 LOG_GLYPH_PX = {"↻": 16, "⧉": 21, "⤢": 16}
 
+# DAN-1463: the page's vertical rhythm, in the mockup's tokens. Each is the
+# extra Qt adds on top of the layout spacing it already has (CARD_SPACING 10,
+# PAGE_SPACING 14), so the sums land on what activity.html draws.
+ENGINE_ROW_GAP = 6      # `.engine-row { margin-bottom: var(--space-4) }`: chips to Pipeline
+ENGINE_ACTIONS_GAP = 8  # the `.muted` line's `margin-bottom: var(--space-4)`: Paced to buttons
+ACTIVITY_BODY_GAP = 32  # `.activity-body { gap: var(--space-6) }`: Engines card to Log card
+
 
 class ActivityViewMixin:
     """The Activity mode. A mixin, in MUR's manner - it assigns to `self`."""
@@ -58,6 +65,7 @@ class ActivityViewMixin:
             widgets.SCREEN_TITLE_GAP + widgets.QUEUE_BODY_GAP - widgets.PAGE_SPACING)
 
         layout.addWidget(self._build_engines_card())
+        layout.addSpacing(ACTIVITY_BODY_GAP - widgets.PAGE_SPACING)
         layout.addWidget(self._build_log_card(), 1)
 
         self._log_timer = QTimer(self)
@@ -75,6 +83,7 @@ class ActivityViewMixin:
 
         self.engine_chip_row = widgets.FlowLayout()
         layout.addLayout(self.engine_chip_row)
+        layout.addSpacing(ENGINE_ROW_GAP)
 
         # Y-03 / DAN-1392: the line-up as a sentence *below* the chips, mono,
         # the engine names bold - the mockup's `.pipeline-line`.
@@ -93,6 +102,7 @@ class ActivityViewMixin:
 
         self.engine_summary = widgets.hint("")
         layout.addWidget(self.engine_summary)
+        layout.addSpacing(ENGINE_ACTIONS_GAP)
 
         row = QHBoxLayout()
         row.addWidget(widgets.pill_button("Parser health…", self.action_parser_health))

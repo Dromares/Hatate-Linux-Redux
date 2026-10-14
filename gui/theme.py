@@ -694,13 +694,13 @@ def stylesheet(mode):
        paints itself from STATUS_GLYPHS/STATUS_WEIGHTS and never reaches
        QSS at all. DAN-149: an outlined hairline tag with no background
        fill, matching tokens.css's `.engine-tag` - on/off carried by ink
-       tier plus border weight, not a hue (and not font-weight: 700,
-       which this Regular-only Space Grotesk build can't render -
-       DAN-148). ---- */
+       tier, border weight and (DAN-1463) type weight, not a hue. The
+       700 is the mono face's: Space Grotesk is Regular-only here
+       (DAN-148), which is why this was once left at 400. ---- */
     QLabel#EngineChipOn {{
             background: transparent; color: {ink_100};
             border: 1px solid {ink_46};
-            font-family: {font_mono};
+            font-family: {font_mono}; font-weight: 700;
             padding: 8px 12px; font-size: 11px;
     }}
     QLabel#EngineChipOff {{
