@@ -64,6 +64,25 @@
 # `$REMOTE/$BRANCH`'s own log - so a deleted branch ref cannot affect it
 # either way.
 #
+# MERGED-PR EVIDENCE FALLBACK (DAN-1457): merge/verify/refresh child tickets
+# usually carry no commit of their own - the work shipped under the PARENT's
+# id - so the subject grep reports a false NONE FOUND (103 of them in the
+# DAN-1442 sweep, each hand-checked). When the grep misses, the script reads
+# the ticket's own description and comments and counts it as PASS only if one
+# line of it names BOTH a PR number and a commit SHA and the target ref agrees:
+#   - the ref has a commit for that PR: a squash subject ending "(#N)" or a
+#     "Merge pull request #N from ..." merge commit (call it M), and
+#   - the cited SHA is M itself or one of the commits M brought in
+#     (`git rev-list M^1..M`), which also means it is an ancestor of the ref.
+# This is deliberately not a bare `--is-ancestor <sha> <ref>`: any old SHA is
+# an ancestor of main, so a ticket that cites an unrelated base commit would
+# false-PASS. Anchoring the SHA to the PR's own commit keeps false-done at 0.
+# A squash-merged PR whose evidence cites only the pre-squash branch tip, or a
+# ticket with no PR+SHA in its text, still reads NONE FOUND (check by hand).
+# Evidence comes from the Paperclip API when PAPERCLIP_API_URL/API_KEY are set,
+# or from $VERIFY_CLOSED_EVIDENCE_DIR/<TICKET>.txt when that is set (tests,
+# offline use). With neither, the fallback is skipped.
+#
 # Usage:
 #   scripts/verify_closed.sh TICKET_ID [TICKET_ID...]
 #   scripts/verify_closed.sh --last N
@@ -82,6 +101,7 @@
 #
 # Output: one line per ticket -
 #   TICKET  PASS  <sha>  <subject>
+#   TICKET  PASS (merged PR #N, evidence sha <sha>)  <sha>  <subject>
 #   TICKET  NONE FOUND (may be a squash without the id - check by hand)
 #
 # Exit status: 0 if every ticket has at least one matching commit, 1 if
@@ -91,7 +111,7 @@
 set -euo pipefail
 
 print_help() {
-  sed -n '3,89p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '3,109p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 REMOTE="origin"
@@ -186,6 +206,78 @@ git rev-parse --verify --quiet "$ref" >/dev/null || {
   exit 2
 }
 
+# Print "<pr> <merge-sha> <cited-sha> <subject>" if TICKET's own text names a
+# PR and a SHA that agree with $ref (see MERGED-PR EVIDENCE FALLBACK), else
+# nothing. Never fails the script: any lookup problem means "no evidence".
+merged_pr_evidence() {
+  local id="$1" text=""
+  if [[ -n "${VERIFY_CLOSED_EVIDENCE_DIR:-}" ]]; then
+    [[ -f "$VERIFY_CLOSED_EVIDENCE_DIR/$id.txt" ]] && text="$(cat "$VERIFY_CLOSED_EVIDENCE_DIR/$id.txt")"
+  elif [[ -n "${PAPERCLIP_API_URL:-}" && -n "${PAPERCLIP_API_KEY:-}" ]]; then
+    local base="${PAPERCLIP_API_URL%/}"
+    base="${base%/api}"
+    text="$(
+      for path in "" "/comments"; do
+        curl -sf -H "Authorization: Bearer $PAPERCLIP_API_KEY" "$base/api/issues/$id$path" || true
+      done | python3 -I -c '
+import json, sys
+dec = json.JSONDecoder(strict=False)
+raw, pos = sys.stdin.read(), 0
+while pos < len(raw):
+    while pos < len(raw) and raw[pos].isspace():
+        pos += 1
+    if pos >= len(raw):
+        break
+    obj, pos = dec.raw_decode(raw, pos)
+    for item in obj if isinstance(obj, list) else [obj]:
+        print(item.get("description") or item.get("body") or "")
+' 2>/dev/null || true
+    )"
+  fi
+  [[ -n "$text" ]] || return 0
+  printf '%s' "$text" | python3 -I -c '
+import re, subprocess, sys
+ref = sys.argv[1]
+text = sys.stdin.read()
+
+def git(*args):
+    return subprocess.run(["git", *args], capture_output=True, text=True)
+
+# PR number and SHA must sit on the same line, so a stray "#2" in one
+# paragraph and an unrelated hash in another cannot pair up.
+pairs = []
+for line in text.splitlines():
+    line_prs = set(re.findall(r"(?:#|pull/)(\d+)\b", line))
+    line_shas = set(re.findall(r"\b[0-9a-f]{7,40}\b", line))
+    if line_prs and line_shas:
+        pairs.append((line_prs, line_shas))
+if not pairs:
+    sys.exit(0)
+prs = sorted(set().union(*(p for p, _ in pairs)), key=int)
+shas = sorted(set().union(*(s for _, s in pairs)))
+resolved = {}
+for sha in shas:
+    full = git("rev-parse", "--verify", "--quiet", sha + "^{commit}").stdout.strip()
+    if full:
+        resolved[sha] = full
+if not resolved:
+    sys.exit(0)
+log = git("log", ref, "--format=%H %s").stdout.splitlines()
+for pr in prs:
+    pat = re.compile(r"\(#%s\)$|^Merge pull request #%s from " % (pr, pr))
+    for line in log:
+        m, _, subject = line.partition(" ")
+        if not pat.search(subject):
+            continue
+        brought = set(git("rev-list", m + "^1.." + m).stdout.split()) | {m}
+        for sha, full in resolved.items():
+            paired = any(pr in p and sha in s for p, s in pairs)
+            if paired and full in brought and git("merge-base", "--is-ancestor", full, ref).returncode == 0:
+                print(pr, m[:7], sha, subject)
+                sys.exit(0)
+' "$ref" 2>/dev/null || true
+}
+
 exit_status=0
 for id in "${TICKETS[@]}"; do
   match="$(git log "$ref" --format='%h %s' | grep -E "\\b${id}\\b" | head -n1 || true)"
@@ -193,6 +285,9 @@ for id in "${TICKETS[@]}"; do
     sha="${match%% *}"
     subject="${match#* }"
     printf '%-14s PASS  %s  %s\n' "$id" "$sha" "$subject"
+  elif evidence="$(merged_pr_evidence "$id")" && [[ -n "$evidence" ]]; then
+    read -r pr msha esha subject <<<"$evidence"
+    printf '%-14s PASS (merged PR #%s, evidence sha %s)  %s  %s\n' "$id" "$pr" "$esha" "$msha" "$subject"
   else
     printf '%-14s NONE FOUND (may be a squash without the id - check by hand)\n' "$id"
     exit_status=1
