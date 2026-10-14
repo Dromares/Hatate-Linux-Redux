@@ -722,6 +722,17 @@ def stylesheet(mode):
             border: 1px solid {ink_58};
     }}
     QPlainTextEdit:disabled, QLineEdit:disabled {{ color: {ink_45}; }}
+    /* The filter bar's text field (`.field`): mono 11px, a 32px row like the
+       combos beside it, so the bar does not mix two voices (DAN-1462). Scoped
+       by property because dialogs and tag editing keep the 14px input size.
+       Typed text keeps the input's own ink, not the mockup's ink_65 - it is
+       what the user is reading, so it stays at full contrast. */
+    QLineEdit[voice="field"] {{
+            background: transparent;
+            font-family: {font_mono};
+            font-size: 11px;
+            padding: 7px 10px;
+    }}
     QPlainTextEdit#Log {{
             font-family: {font_mono};
             font-size: 12px;
