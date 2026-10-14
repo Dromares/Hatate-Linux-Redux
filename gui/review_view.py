@@ -98,7 +98,10 @@ class ReviewViewMixin:
         # Focusable so the review keys (bound to this page as well as the
         # table - see review_shortcuts) have somewhere to land when the
         # mode is entered and nothing on the page has been clicked yet.
-        page.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # ClickFocus, not StrongFocus: setFocus() still lands here, but the
+        # page is not a Tab stop - it draws nothing, so Tab used to vanish
+        # into it for a keypress (DAN-1464).
+        page.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.review_page = page
         outer = QVBoxLayout(page)
         outer.setContentsMargins(0, 0, 0, 0)
