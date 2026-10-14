@@ -735,6 +735,10 @@ def stylesheet(mode):
             min-width: 90px;
     }}
     QComboBox:hover {{ border: 1px solid {ink_58}; }}
+    /* Keyboard focus (DAN-1464): the ink_100 tier, one step past hover's
+       ink_58, so a Tab stop is never mistaken for a mouse-over. Same 1px
+       width as the resting border, so focus never moves the layout. */
+    QComboBox:focus {{ border: 1px solid {ink_100}; }}
     QComboBox:disabled {{ color: {ink_45}; }}
     QComboBox::drop-down {{ border: none; width: 22px; }}
     /* The Review rail's match picker (U6): the mockup's `.picker`, mono and
@@ -951,6 +955,7 @@ def stylesheet(mode):
             height: 8px;
     }}
     QToolButton:hover {{ border-color: {ink_58}; }}
+    QToolButton:focus {{ border-color: {ink_100}; }}
     QToolButton:disabled {{ color: {ink_45}; border-color: {ink_46}; }}
     QToolButton::menu-button {{
             border: none;
@@ -1016,6 +1021,7 @@ def stylesheet(mode):
        light theme it turned the Queue into a loud tan stripe. {zebra} is
        a much quieter wash, composited to an opaque colour in the palette. */
     QTableView {{ alternate-background-color: {zebra}; }}
+    QTableView:focus {{ border: 1px solid {ink_100}; }}  /* DAN-1464 */
     /* Deliberately NO `QTableView::item` rule. Styling an item switches Qt
        to styled-item painting, at which point the model's BackgroundRole is
        ignored - and this table coded match quality green/amber/red long
@@ -1054,6 +1060,7 @@ def stylesheet(mode):
             color: {stamp_fg};
     }}
     QListWidget::item:hover:!selected {{ background: {card}; }}
+    QListWidget:focus, QListView:focus, QTreeView:focus {{ border: 1px solid {ink_100}; }}  /* DAN-1464 */
     /* Review's tag list: rows are drawn and sized by TagRowDelegate (32px,
        hairline rule), so the frame adds no padding of its own. */
     QListWidget#TagList {{ padding: 0; }}
