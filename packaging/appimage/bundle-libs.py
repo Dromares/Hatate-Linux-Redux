@@ -42,7 +42,7 @@ FORCE_BUNDLE = {
 DLOPENED = {
     # libnss3 loads its softokn/freebl/root-cert modules by path at start-up.
     "libnss3": ["libsoftokn3.so", "libfreeblpriv3.so", "libnssckbi.so",
-                "libnssdbm3.so", "libnsssysinit.so"],
+                "libnssdbm3.so", "libfreebl3.so"],
 }
 
 ELF = b"\x7fELF"

@@ -75,7 +75,10 @@ def main() -> None:
 
     packages = set()
     for line in sources.read_text().split():
+        # Debian packages that predate the /usr merge list /lib/..., not /usr/lib/...
         res = subprocess.run(["dpkg", "-S", line], capture_output=True, text=True)
+        if res.returncode != 0 and line.startswith("/usr/lib/"):
+            res = subprocess.run(["dpkg", "-S", line[4:]], capture_output=True, text=True)
         if res.returncode != 0:
             problems.append(f"no Debian package owns bundled library {line}")
             continue
@@ -87,6 +90,9 @@ def main() -> None:
             copy(doc, out / "debian" / pkg / "copyright")
         else:
             problems.append(f"Debian package {pkg} has no /usr/share/doc/{pkg}/copyright")
+
+    (appdir / "usr" / "share" / "hatate" / "bundled-packages.txt").write_text(
+        "\n".join(sorted(packages)) + "\n")
 
     index = sorted(str(p.relative_to(out)) for p in out.rglob("*") if p.is_file())
     (out / "INDEX.txt").write_text("\n".join(index) + "\n")

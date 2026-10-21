@@ -28,7 +28,7 @@ apt-get install -y -qq --no-install-recommends \
     libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
     libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
     libxcb-render-util0 libxcb-shape0 libxcb-sync1 libxcb-xfixes0 libxcb-xinerama0 \
-    libxcb-xkb1 libxkbcommon-x11-0 libfontconfig1 libgl1 libegl1 libopengl0 \
+    libxcb-xkb1 libxkbcommon-x11-0 libwayland-client0 libwayland-cursor0 libwayland-egl1 libfontconfig1 libgl1 libegl1 libopengl0 \
     fonts-liberation fonts-dejavu-core
 dpkg -l | awk '/^ii/ {print $2" "$3}' > /out/rootfs-packages.txt
 
@@ -47,6 +47,9 @@ find "$APPDIR/usr/python/bin" -type f ! -name 'python3*' -delete
 find "$APPDIR/usr/python/bin" -type l ! -name 'python3*' -delete
 SITE="$("$PY" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
 rm -rf "$SITE"/pip "$SITE"/pip-*.dist-info "$SITE"/setuptools* "$SITE"/_distutils_hack "$SITE"/pkg_resources 2>/dev/null || true
+
+step "pruning the Qt wheels to what Hatate imports"
+"$PY" "$HERE/prune-qt.py" "$SITE"
 
 # ---------------------------------------------------------------- chromium
 step "Playwright's Chromium"
@@ -180,8 +183,7 @@ for d in sorted(m.distributions(), key=lambda d: d.metadata['Name'].lower()):
     print('  %s==%s' % (d.metadata['Name'], d.version))"
     echo
     echo "bundled system libraries (Debian packages):"
-    xargs -a /tmp/bundled-sources.txt -r dpkg -S 2>/dev/null | cut -d: -f1 | sort -u \
-        | xargs -r dpkg-query -W -f '  ${Package} ${Version}\n'
+    xargs -a "$SHARE/bundled-packages.txt" -r dpkg-query -W -f '  ${Package} ${Version}\n'
 } > "$MANIFEST"
 
 # ---------------------------------------------------------------- squashfs
