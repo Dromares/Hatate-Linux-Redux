@@ -15,7 +15,7 @@ numpy>=1.24,<3
 # Lens engine needs it, and it brings a ~150MB Chromium with it. Google
 # builds those results with JavaScript, and QtWebEngine's Chromium fork
 # cannot run its front-end - a stock Chromium can. Install it if you
-# want that engine:
+# want that engine (the AppImage, which bundles both, needs none of this):
 #   venv/bin/pip install playwright
 #   venv/bin/playwright install chromium
 # playwright>=1.40

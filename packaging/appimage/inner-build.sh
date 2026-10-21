@@ -100,17 +100,28 @@ echo "version $HATATE_VERSION"
 # ------------------------------------------------------------------- fonts
 step "fonts for a machine that has none"
 mkdir -p "$APPDIR/usr/share/fonts/hatate" "$APPDIR/usr/etc/fonts"
-cp /usr/share/fonts/truetype/dejavu/DejaVuSans*.ttf /usr/share/fonts/truetype/liberation/Liberation*.ttf \
+cp /usr/share/fonts/truetype/dejavu/DejaVu*.ttf /usr/share/fonts/truetype/liberation/Liberation*.ttf \
     "$APPDIR/usr/share/fonts/hatate/"
 cat > "$APPDIR/usr/etc/fonts/fonts.conf" <<'FCEOF'
 <?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<!-- The image's own fontconfig (2.13) cannot parse the newer host
+     /etc/fonts/conf.d files (it prints a screenful of errors), so the host's
+     configuration is NOT included; its font directories are listed instead. -->
 <fontconfig>
-  <!-- The host's own configuration (and so its fonts) when it has one. -->
-  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>
-  <!-- Then the fonts shipped in the image, found relative to this file. -->
   <dir prefix="relative">../../share/fonts/hatate</dir>
+  <dir>/usr/share/fonts</dir>
+  <dir>/usr/local/share/fonts</dir>
+  <dir prefix="xdg">fonts</dir>
+  <dir>~/.fonts</dir>
   <cachedir prefix="xdg">fontconfig</cachedir>
+  <alias><family>sans-serif</family><prefer><family>DejaVu Sans</family></prefer></alias>
+  <alias><family>serif</family><prefer><family>DejaVu Serif</family></prefer></alias>
+  <alias><family>monospace</family><prefer><family>DejaVu Sans Mono</family></prefer></alias>
+  <alias binding="same"><family>Arial</family><prefer><family>Liberation Sans</family></prefer></alias>
+  <alias binding="same"><family>Helvetica</family><prefer><family>Liberation Sans</family></prefer></alias>
+  <alias binding="same"><family>Times New Roman</family><prefer><family>Liberation Serif</family></prefer></alias>
+  <alias binding="same"><family>Courier New</family><prefer><family>Liberation Mono</family></prefer></alias>
 </fontconfig>
 FCEOF
 

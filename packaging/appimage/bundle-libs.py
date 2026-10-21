@@ -35,6 +35,7 @@ FORCE_BUNDLE = {
     "libfontconfig.so.1", "libfreetype.so.6",        # Qt Gui, chrome (via pango/cairo)
     "libharfbuzz.so.0", "libfribidi.so.0",           # pango
     "libexpat.so.1",                                 # chrome, fontconfig
+    "libwayland-client.so.0",                        # Qt wayland platform plugin
 }
 
 # Libraries loaded with dlopen(), which ldd cannot see. Package name ->
