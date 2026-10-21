@@ -1,0 +1,17 @@
+Qt is distributed with this AppImage under the GNU Lesser General Public
+License version 3 (LGPLv3), with GPLv3 as the alternative; the license
+texts are LGPL-3.txt and GPL-3.txt next to this file.
+
+The Qt libraries are the unmodified binaries of the PyQt6-Qt6 wheel
+(see usr/share/licenses/python/PyQt6_Qt6-*/ for that wheel's own notices),
+built by the Qt Company / Riverbank from the open-source Qt sources. The
+exact Qt version is recorded in usr/share/hatate/build-manifest.txt.
+
+The corresponding source code of Qt is available from
+https://download.qt.io/official_releases/qt/ (and the source of the PyQt6
+bindings from https://pypi.org/project/PyQt6/#files). Because the Qt
+libraries are ordinary shared objects inside this AppImage, you can
+replace them: extract the image with `./Hatate-x86_64.AppImage
+--appimage-extract`, swap in your own build of the same Qt version under
+squashfs-root/usr/python/lib/python3.13/site-packages/PyQt6/Qt6/lib/, and
+run squashfs-root/AppRun.

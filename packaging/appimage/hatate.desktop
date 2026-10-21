@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Hatate
+GenericName=Reverse image tagger
+Comment=IQDB/SauceNAO/Google Lens reverse image search and tagger for Hydrus
+Exec=hatate
+Icon=hatate
+Terminal=false
+Categories=Graphics;Utility;
+StartupWMClass=hatate-linux
+X-AppImage-Name=Hatate

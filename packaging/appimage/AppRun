@@ -1,0 +1,36 @@
+#!/bin/sh
+# AppRun for the Hatate AppImage. Everything it needs is under $APPDIR:
+# its own CPython (usr/python), the PyQt6/Playwright wheels in that
+# Python's site-packages, Playwright's Chromium (usr/lib/ms-playwright) and
+# the shared libraries they need (usr/lib). Nothing here writes into
+# $APPDIR - the mount is read-only; settings and caches go to the XDG
+# directories core/paths.py picks.
+HERE="$(dirname "$(readlink -f "$0")")"
+APPDIR="${APPDIR:-$HERE}"
+export APPDIR
+
+# Tells the app it is the AppImage, so Lens never offers to install
+# Playwright (core/paths.py running_as_appimage).
+export HATATE_APPIMAGE=1
+
+# Playwright finds its browser here, not in ~/.cache/ms-playwright.
+export PLAYWRIGHT_BROWSERS_PATH="$APPDIR/usr/lib/ms-playwright"
+
+# Bundled libraries first; whatever the host exports follows.
+export LD_LIBRARY_PATH="$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# A host Python environment must not leak in, and nothing may write
+# __pycache__ next to the sources inside the read-only image.
+unset PYTHONHOME PYTHONPATH PYTHONSTARTUP VIRTUAL_ENV
+export PYTHONNOUSERSITE=1
+export PYTHONDONTWRITEBYTECODE=1
+
+# Fonts: the host's configuration plus the few fonts bundled for a machine
+# that has none (Chromium draws blank text without any).
+export FONTCONFIG_FILE="$APPDIR/usr/etc/fonts/fonts.conf"
+
+# Qt: the xcb (X11) plugin is bundled together with libxcb-cursor; Qt picks
+# Wayland itself when the session is one and the plugin loads.
+unset QT_PLUGIN_PATH QT_QPA_PLATFORM_PLUGIN_PATH
+
+exec "$APPDIR/usr/python/bin/python3.13" "$APPDIR/usr/share/hatate/main.py" "$@"

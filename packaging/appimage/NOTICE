@@ -1,0 +1,53 @@
+Hatate AppImage - third-party notices
+=====================================
+
+Hatate's own source code is released under the MIT License (see
+usr/share/licenses/hatate/LICENSE).
+
+THIS APPIMAGE AS A WHOLE IS DISTRIBUTED UNDER THE GNU GENERAL PUBLIC
+LICENSE VERSION 3 (GPLv3), because it bundles PyQt6, which is licensed
+under the GPLv3 (usr/share/licenses/python/PyQt6-*/). If you need to
+combine Hatate with PyQt6 under other terms, Riverbank Computing sells a
+commercial PyQt license; that is a matter between you and Riverbank and
+does not affect this notice. The corresponding source of everything in
+this image is available from the upstream locations named below, and the
+Hatate source and packaging scripts from
+https://github.com/Dromares/Hatate-Linux-Redux.
+
+Bundled components and their licenses. The full texts are under
+usr/share/licenses/ (INDEX.txt lists every file).
+
+  Component                    License              Where the text is
+  ---------------------------  -------------------  -----------------------------------
+  CPython (python-build-       Python Software      licenses/cpython/
+    standalone build)          Foundation License
+  PyQt6, PyQt6-sip             GPLv3                licenses/python/PyQt6-*/
+  Qt 6 (PyQt6-Qt6 wheel)       LGPLv3 (or GPLv3)    licenses/qt/ - includes the source offer
+  Playwright (Python package)  Apache-2.0           licenses/python/playwright-*/
+  Playwright driver (Node.js   Apache-2.0, plus     licenses/playwright-driver/
+    and its dependencies)        third-party notices
+  Chromium (Chrome for         BSD-3-Clause, plus   licenses/chromium/ - LICENSE and
+    Testing build)               its third-party      credits.html (chrome://credits)
+                                 components
+  requests, urllib3, idna,     Apache-2.0 / MIT /   licenses/python/<name>-<version>/
+    certifi, charset-          MPL-2.0 / BSD
+    normalizer, beautifulsoup4,
+    soupsieve, typing-
+    extensions, lxml, Pillow,
+    numpy, greenlet, pyee
+  System libraries (nss,       various (LGPL, MPL,  licenses/debian/<package>/copyright
+    nspr, atk, at-spi, cups,     MIT, BSD, ...)
+    gbm, drm, xkbcommon, xcb,
+    X11, glib, cairo, pango,
+    fontconfig, freetype, ...)
+    from Ubuntu 22.04
+  DejaVu fonts, Liberation     Bitstream Vera /     licenses/debian/fonts-*/copyright
+    fonts                        OFL / GPL+exception
+
+The exact versions of the Python distributions and Debian packages in this
+build are listed in usr/share/hatate/build-manifest.txt.
+
+Some libraries (the LGPL ones among them) are ordinary shared objects in
+this image. You may replace them with your own build: extract the image
+with `./Hatate-x86_64.AppImage --appimage-extract`, change the file under
+squashfs-root/, and run squashfs-root/AppRun.
