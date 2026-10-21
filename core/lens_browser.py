@@ -43,7 +43,7 @@ from typing import List, Optional
 from . import desktop_attention
 from .applog import get_logger
 from .google_images import GOOGLE_URL
-from .paths import CONFIG_DIR
+from .paths import CONFIG_DIR, running_as_appimage
 
 log = get_logger("lens_browser")
 
@@ -162,6 +162,21 @@ class _Job:
     error: Optional[Exception] = None
 
 
+def bundled_browser_message() -> str:
+    """Lens is part of the AppImage; if it is missing, the file is damaged.
+
+    Nothing to install: the AppImage mount is read-only and
+    pip/playwright would write into it. The only fix is a fresh copy.
+    """
+    return (
+        "Google Lens ships inside this AppImage (Playwright and Chromium), but the "
+        "bundled browser could not be found"
+        f" (PLAYWRIGHT_BROWSERS_PATH={os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '')!r}). "
+        "This AppImage is damaged or incomplete. Download it again and check it against "
+        "SHA256SUMS; there is nothing to install separately."
+    )
+
+
 def missing_dependency_message() -> str:
     """How to install Playwright, for the interpreter actually in use.
 
@@ -172,6 +187,8 @@ def missing_dependency_message() -> str:
     will not be seen - reporting "not installed" for something they just
     installed.
     """
+    if running_as_appimage():
+        return bundled_browser_message()
     lines = [
         "Google Lens needs Playwright and a Chromium build, and they are not installed "
         f"for the Python running this app ({sys.executable}). Install them with:",
@@ -201,6 +218,8 @@ def missing_chromium_message() -> str:
     advice for this one and sends a user to reinstall a package they
     already have.
     """
+    if running_as_appimage():
+        return bundled_browser_message()
     return "\n".join([
         "Google Lens has Playwright installed for the Python running this app "
         f"({sys.executable}), but the Chromium build it drives is missing. Install it "
@@ -252,7 +271,10 @@ def chromium_installed() -> Optional[bool]:
     """
     root = _browsers_root()
     if root is None:
-        return None
+        # The AppImage's AppRun always points this at the bundled
+        # browsers, so a missing or "0" setting there means the file is
+        # not the one that was built, not a layout this cannot read.
+        return False if running_as_appimage() else None
     try:
         if not root.is_dir():
             # `playwright install` creates this directory. Absent with a
