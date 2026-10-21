@@ -89,6 +89,12 @@ if [ ! -f "$ROOTFS/.hatate-rootfs-ok" ]; then
     # Debian/Ubuntu apt drops privileges to _apt; there is no such uid in
     # a one-uid user namespace, so it is told to stay root.
     echo 'APT::Sandbox::User "root";' > "$ROOTFS/etc/apt/apt.conf.d/99-hatate-build"
+    # fontconfig-config's postinst chowns this to root:staff when it creates it,
+    # and gid 50 does not exist in a one-uid user namespace (chown: Invalid
+    # argument, then half the library packages stay unconfigured). If the
+    # directory is already there it skips the chown.
+    mkdir -p "$ROOTFS/usr/local/share/fonts"
+    chmod 2775 "$ROOTFS/usr/local/share/fonts"
     touch "$ROOTFS/.hatate-rootfs-ok"
 fi
 
