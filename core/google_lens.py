@@ -69,6 +69,7 @@ from . import boorus, engine_alerts, lens_browser, reddit
 from .applog import get_logger
 from .google_images import SEARCH_BY_IMAGE_URL, host_label, is_google_host
 from .image_prep import prepare_upload_bytes
+from .paths import running_as_appimage
 from .progress_ticker import OnTick, ProgressTicker
 
 log = get_logger("google_lens")
@@ -359,7 +360,11 @@ def announce_unavailable(exc: lens_browser.LensBrowserUnavailable) -> bool:
     though Lens had searched every one.
     """
     missing = getattr(exc, "missing", None)
-    if missing == lens_browser.MISSING_PLAYWRIGHT:
+    if missing and running_as_appimage():
+        body = ("Google Lens was skipped: the Playwright and Chromium bundled in this "
+                "AppImage could not be found, so no browser could be started. Every "
+                "image in this run was searched by the other engines only.")
+    elif missing == lens_browser.MISSING_PLAYWRIGHT:
         body = ("Google Lens was skipped: the Playwright package it needs is not "
                 "installed, so no browser could be started. Every image in this run "
                 "was searched by the other engines only.")

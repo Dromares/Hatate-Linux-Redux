@@ -44,3 +44,4 @@ search_cache/
 # neither should ever make `git status` in the primary checkout dirty.
 .claude/settings.local.json
 .claude/worktrees/
+build/

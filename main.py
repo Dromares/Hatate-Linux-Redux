@@ -6,6 +6,14 @@ review/edit them, and send files + tags + URLs to Hydrus over its Client API.
 """
 import sys
 
+from core.version import __version__
+
+# Before any other import: --version must answer without loading Qt or
+# opening a display (the AppImage build and its smoke checks rely on it).
+if __name__ == "__main__" and "--version" in sys.argv[1:]:
+    print(f"Hatate {__version__}")
+    sys.exit(0)
+
 from PIL import Image as PILImage
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon, QImageReader

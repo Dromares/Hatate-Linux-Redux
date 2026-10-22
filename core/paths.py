@@ -15,6 +15,18 @@ from pathlib import Path
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 RESOURCES_DIR = PROJECT_DIR / "resources"
 
+
+
+def running_as_appimage() -> bool:
+    """True inside the Hatate AppImage, whose AppRun sets HATATE_APPIMAGE=1.
+
+    The AppImage carries its own Python, Playwright and Chromium, so code
+    that would otherwise tell a user to `pip install` something must not
+    say so there: the mount is read-only and the advice cannot work.
+    """
+    return os.environ.get("HATATE_APPIMAGE") == "1"
+
+
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "hatate-linux"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_LOG_FILE = CONFIG_DIR / "matched_urls.log"

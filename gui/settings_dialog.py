@@ -19,6 +19,7 @@ from core.engines import ALL_ENGINES, label_for as engine_label, pipeline_summar
 from core import lens_browser, mcp_audit, shortcuts as shortcut_registry, sidecar
 from core.hydrus_client import HydrusClient, HydrusError
 from core.mcp_server import HOST as MCP_HOST
+from core.paths import running_as_appimage
 from core.provenance_note import DEFAULT_NOTE_NAME
 from gui import message, settings_search, theme, widgets
 
@@ -741,12 +742,15 @@ class SettingsDialog(QDialog):
             "images.google.com - a different index from the Cloud Vision engine above. "
             "It returns the pages a picture actually appears on: DeviantArt, Reddit, "
             "Tumblr, Instagram, personal sites.\n\n"
-            "Needs Playwright and a Chromium build, which are optional and not installed "
-            "by default (~150MB, and nothing else here uses them). In this app's "
-            "virtualenv:\n"
-            "    venv/bin/pip install playwright\n"
-            "    venv/bin/playwright install chromium\n\n"
-            "A Chromium window opens while a search runs. That is deliberate: headless "
+            + ("Playwright and a Chromium build are included in this AppImage, so "
+               "there is nothing to install.\n\n"
+               if running_as_appimage() else
+               "Needs Playwright and a Chromium build, which are optional and not installed "
+               "by default (~150MB, and nothing else here uses them). In this app's "
+               "virtualenv:\n"
+               "    venv/bin/pip install playwright\n"
+               "    venv/bin/playwright install chromium\n\n")
+            + "A Chromium window opens while a search runs. That is deliberate: headless "
             "is challenged on sight, and a visible window is what lets you answer "
             "Google's robot check when it appears. The answer is remembered in a profile "
             "under ~/.config/hatate-linux/lens_profile, so it should be rare.\n\n"
@@ -957,7 +961,9 @@ class SettingsDialog(QDialog):
         box.setWindowTitle("Google Lens is not installed yet")
         box.setText(
             "Google Lens is on, but it cannot run yet: "
-            + ("the Playwright package it needs is not installed."
+            + ("the browser bundled with this AppImage could not be found."
+               if running_as_appimage()
+               else "the Playwright package it needs is not installed."
                if status.missing == lens_browser.MISSING_PLAYWRIGHT
                else "Playwright is installed, but the Chromium browser it drives is not.")
             + "\n\nSearches will carry on with the other engines and Lens will be "

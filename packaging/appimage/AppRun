@@ -1,0 +1,76 @@
+#!/bin/sh
+# AppRun for the Hatate AppImage. Everything it needs is under $APPDIR:
+# its own CPython (usr/python), the PyQt6/Playwright wheels in that
+# Python's site-packages, Playwright's Chromium (usr/lib/ms-playwright) and
+# the shared libraries they need (usr/lib). Nothing here writes into
+# $APPDIR - the mount is read-only; settings and caches go to the XDG
+# directories core/paths.py picks.
+HERE="$(dirname "$(readlink -f "$0")")"
+APPDIR="${APPDIR:-$HERE}"
+export APPDIR
+
+# Tells the app it is the AppImage, so Lens never offers to install
+# Playwright (core/paths.py running_as_appimage).
+export HATATE_APPIMAGE=1
+
+# Playwright finds its browser here, not in ~/.cache/ms-playwright.
+export PLAYWRIGHT_BROWSERS_PATH="$APPDIR/usr/lib/ms-playwright"
+
+# Bundled libraries first; whatever the host exports follows.
+export LD_LIBRARY_PATH="$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# A host Python environment must not leak in, and nothing may write
+# __pycache__ next to the sources inside the read-only image.
+unset PYTHONHOME PYTHONPATH PYTHONSTARTUP VIRTUAL_ENV
+export PYTHONNOUSERSITE=1
+export PYTHONDONTWRITEBYTECODE=1
+
+# Fonts. The image's fontconfig (2.13) cannot parse a newer host's
+# /etc/fonts/conf.d (it prints a screenful of errors), so the host's
+# configuration is NOT included: the host's font directories are listed
+# instead, together with the few fonts bundled for a machine that has none
+# (Chromium draws blank text, Qt draws tofu, without any). 2.13 does not
+# resolve a relative <dir>, so the file is written here with the absolute
+# mount path. It cannot go inside $APPDIR (read-only), so it goes to the
+# runtime dir: one small file per mount, and files whose mount is gone are
+# swept on the next launch.
+FONTCONF_DIR="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/hatate-fonts-$(id -u)"
+FONTCONF="$FONTCONF_DIR/$(printf %s "$APPDIR" | cksum | cut -d' ' -f1).conf"
+mkdir -p "$FONTCONF_DIR" && chmod 700 "$FONTCONF_DIR"
+for old in "$FONTCONF_DIR"/*.conf; do
+    [ -e "$old" ] || continue
+    old_dir="$(sed -n 's|^  <dir>\(.*\)</dir> <!-- bundled -->$|\1|p' "$old")"
+    [ -d "$old_dir" ] || rm -f "$old"
+done
+FONTS_DIR="$(printf %s "$APPDIR/usr/share/fonts/hatate" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')"
+cat > "$FONTCONF.$$" <<FCEOF
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <dir>$FONTS_DIR</dir> <!-- bundled -->
+  <dir>/usr/share/fonts</dir>
+  <dir>/usr/local/share/fonts</dir>
+  <dir prefix="xdg">fonts</dir>
+  <dir>~/.fonts</dir>
+  <cachedir prefix="xdg">fontconfig</cachedir>
+  <alias><family>sans-serif</family><prefer><family>DejaVu Sans</family></prefer></alias>
+  <alias><family>serif</family><prefer><family>DejaVu Serif</family></prefer></alias>
+  <alias><family>monospace</family><prefer><family>DejaVu Sans Mono</family></prefer></alias>
+  <alias binding="same"><family>Arial</family><prefer><family>Liberation Sans</family></prefer></alias>
+  <alias binding="same"><family>Helvetica</family><prefer><family>Liberation Sans</family></prefer></alias>
+  <alias binding="same"><family>Times New Roman</family><prefer><family>Liberation Serif</family></prefer></alias>
+  <alias binding="same"><family>Courier New</family><prefer><family>Liberation Mono</family></prefer></alias>
+</fontconfig>
+FCEOF
+if mv -f "$FONTCONF.$$" "$FONTCONF" 2>/dev/null; then
+    export FONTCONFIG_FILE="$FONTCONF"
+else                                    # unwritable runtime dir: the host's own config
+    rm -f "$FONTCONF.$$"
+    unset FONTCONFIG_FILE
+fi
+
+# Qt: the xcb (X11) plugin is bundled together with libxcb-cursor; Qt picks
+# Wayland itself when the session is one and the plugin loads.
+unset QT_PLUGIN_PATH QT_QPA_PLATFORM_PLUGIN_PATH
+
+exec "$APPDIR/usr/python/bin/python3.13" "$APPDIR/usr/share/hatate/main.py" "$@"

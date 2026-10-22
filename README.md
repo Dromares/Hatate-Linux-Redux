@@ -128,8 +128,9 @@ key*, which is the only thing that field is actually called.
   with JavaScript and QtWebEngine's Chromium fork cannot run its
   front-end (its own script throws, and the request that fetches the
   results goes out with an empty session id). A stock Chromium runs the
-  same page correctly. Optional, and not installed by default — it is a
-  ~150MB browser that nothing else here needs:
+  same page correctly. For a source install it is optional and not
+  installed by default — it is a ~150MB browser that nothing else here
+  needs (the [AppImage](#appimage-nothing-else-to-install) bundles it):
 
   ```
   venv/bin/pip install playwright
@@ -841,6 +842,50 @@ key*, which is the only thing that field is actually called.
 
 ## Install
 
+### AppImage (nothing else to install)
+
+The **Hatate AppImage** is one file that carries its own Python, PyQt6,
+Playwright and Playwright's Chromium, so a Google Lens search works with
+nothing else installed — no `pip`, no `playwright install`, no system
+Chromium. Download `Hatate-x86_64.AppImage` and `SHA256SUMS` from the
+[latest release](https://github.com/Dromares/Hatate-Linux-Redux/releases/latest),
+then:
+
+```bash
+sha256sum -c --ignore-missing SHA256SUMS   # prints "Hatate-x86_64.AppImage: OK"
+chmod +x Hatate-x86_64.AppImage
+./Hatate-x86_64.AppImage
+```
+
+- **Size:** about 315 MB (the Chromium build is most of it). `./Hatate-x86_64.AppImage --version`
+  prints `Hatate 0.1.0` without opening a window.
+- **Requirements:** x86_64 Linux with **glibc 2.35 or newer** (Ubuntu 22.04,
+  Debian 12, Fedora 36 and later, current Arch). It is built in an Ubuntu 22.04
+  root filesystem, so nothing in it needs a newer glibc. It uses the static
+  type-2 runtime, so `libfuse2` is not required; the kernel's FUSE (`/dev/fuse`
+  and a working `fusermount`) still is. Without it, run
+  `APPIMAGE_EXTRACT_AND_RUN=1 ./Hatate-x86_64.AppImage`.
+- **Google Lens** is included. It opens a real Chromium window while a search
+  runs, exactly as described under *Google Lens* above; the Lens settings never
+  suggest installing anything in the AppImage.
+- **Your data stays where it always was:** `~/.config/hatate-linux` and
+  `~/.cache/hatate-linux` (the XDG directories). The AppImage never writes
+  inside itself (a small fontconfig file goes to `$XDG_RUNTIME_DIR`, or `$TMPDIR`).
+- **Fonts:** the image carries DejaVu, Liberation and FreeSerif, so the buttons
+  and Chromium's text render on a machine with no fonts at all. It lists the
+  host's font directories too, but not the host's fontconfig rules (the bundled
+  fontconfig is older than a current host's), so your own substitution rules do
+  not apply inside the AppImage.
+- **Licence:** Hatate's own source is MIT, but the AppImage bundles PyQt6, so the
+  **AppImage as a whole is distributed under the GPLv3**. The licence texts of
+  everything in it are under `usr/share/licenses/` inside the image (see
+  `./Hatate-x86_64.AppImage --appimage-extract` and `squashfs-root/NOTICE`).
+- Building it yourself, and cutting a release, are described in
+  [`packaging/appimage/README.md`](packaging/appimage/README.md) and
+  [`RELEASING.md`](RELEASING.md).
+
+### From source
+
 **Recommended: launch from your applications menu, no terminal needed after this.**
 
 ```bash
@@ -1102,6 +1147,7 @@ main.py                 entry point
 install.sh               one-time setup: venv + applications-menu entry
 run.sh                   launcher script (used by the menu entry, or run directly)
 resources/icon.svg       app icon
+packaging/appimage/      builds Hatate-x86_64.AppImage (see its README); RELEASING.md is the release checklist
 core/
   config.py              settings persistence (~/.config/hatate-linux)
   models.py               Tag / ImageEntry / enums
