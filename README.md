@@ -870,7 +870,12 @@ chmod +x Hatate-x86_64.AppImage
   suggest installing anything in the AppImage.
 - **Your data stays where it always was:** `~/.config/hatate-linux` and
   `~/.cache/hatate-linux` (the XDG directories). The AppImage never writes
-  inside itself.
+  inside itself (a small fontconfig file goes to `$XDG_RUNTIME_DIR`, or `$TMPDIR`).
+- **Fonts:** the image carries DejaVu, Liberation and FreeSerif, so the buttons
+  and Chromium's text render on a machine with no fonts at all. It lists the
+  host's font directories too, but not the host's fontconfig rules (the bundled
+  fontconfig is older than a current host's), so your own substitution rules do
+  not apply inside the AppImage.
 - **Licence:** Hatate's own source is MIT, but the AppImage bundles PyQt6, so the
   **AppImage as a whole is distributed under the GPLv3**. The licence texts of
   everything in it are under `usr/share/licenses/` inside the image (see

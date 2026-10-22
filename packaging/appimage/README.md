@@ -32,7 +32,8 @@ version of every ELF file in the image and fails above 2.35.
 | `bundle-libs.py` | copies the shared libraries chrome, Qt and Python need (the AppImage excludelist, less a short forced-bundle list, stays on the host) |
 | `extract-credits.py` | pulls Chromium's `chrome://credits` page out of `resources.pak` |
 | `collect-licenses.py` | puts every component's licence text under `usr/share/licenses/`, and fails if one has none |
-| `AppRun`, `hatate.desktop`, `NOTICE`, `licenses/` | files shipped in the image |
+| `smoke-fonts.sh`, `fonts-probe.py` | font check for a built image: under AppRun's environment with `/usr/share/fonts` hidden (bwrap), the image's own fontconfig must load the bundled fonts, including one with U+29C9 (`HATATE_APPIMAGE_FILE=… python3 -m unittest tests.test_appimage_packaging` runs it) |
+| `AppRun`, `hatate.desktop`, `NOTICE`, `licenses/` | files shipped in the image. AppRun writes the fontconfig file at launch (fontconfig 2.13 needs the absolute mount path) into `$XDG_RUNTIME_DIR`, `$TMPDIR` or `/tmp`, never into the image |
 
 Nothing is downloaded unpinned: the rootfs tarball, python-build-standalone,
 appimagetool (release `1.9.1`), the type-2 runtime (`20251108`) and the

@@ -42,7 +42,7 @@ usr/share/licenses/ (INDEX.txt lists every file).
     fontconfig, freetype, ...)
     from Ubuntu 22.04
   DejaVu fonts, Liberation     Bitstream Vera /     licenses/debian/fonts-*/copyright
-    fonts                        OFL / GPL+exception
+    fonts, GNU FreeSerif         OFL / GPL+exception
 
 The exact versions of the Python distributions and Debian packages in this
 build are listed in usr/share/hatate/build-manifest.txt.

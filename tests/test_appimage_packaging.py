@@ -11,11 +11,19 @@ packaging:
     and the source install's requirements.txt keeps Playwright optional;
   * AppRun sets the two variables the app relies on, and the desktop file,
     icon and NOTICE are in place;
+  * AppRun writes a fontconfig file that names the bundled font directory by
+    its absolute path (the image's fontconfig 2.13 loads 0 fonts from a
+    relative <dir>) and writes nothing inside $APPDIR;
   * the shell scripts at least parse.
+
+A built image can be checked the same way with smoke-fonts.sh (bwrap, no
+system fonts): set HATATE_APPIMAGE_FILE to run that here too.
 """
 import os
 import re
+import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -127,7 +135,7 @@ class TestShippedFiles(unittest.TestCase):
         self.assertTrue((PKG / "licenses" / "qt-source-offer.txt").is_file())
 
     def test_shell_scripts_parse(self):
-        for name in ("build.sh", "inner-build.sh", "AppRun", "pins.sh"):
+        for name in ("build.sh", "inner-build.sh", "AppRun", "pins.sh", "smoke-fonts.sh"):
             with self.subTest(name):
                 proc = subprocess.run(["bash", "-n", str(PKG / name)], capture_output=True, text=True)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -142,3 +150,91 @@ class TestShippedFiles(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _fake_appdir(root: Path) -> Path:
+    """An AppDir whose 'python' prints the environment AppRun hands it."""
+    appdir = root / "mnt dir"                      # a space: the path must survive quoting
+    (appdir / "usr" / "python" / "bin").mkdir(parents=True)
+    (appdir / "usr" / "share" / "hatate").mkdir(parents=True)
+    (appdir / "usr" / "share" / "fonts" / "hatate").mkdir(parents=True)
+    shutil.copy(PKG / "AppRun", appdir / "AppRun")
+    python = appdir / "usr" / "python" / "bin" / "python3.13"
+    python.write_text('#!/bin/sh\necho "$FONTCONFIG_FILE"\n')
+    python.chmod(0o755)
+    (appdir / "usr" / "share" / "hatate" / "main.py").write_text("")
+    return appdir
+
+
+def _tree(path: Path) -> set:
+    return {str(p.relative_to(path)) for p in path.rglob("*")}
+
+
+class TestAppRunFonts(unittest.TestCase):
+    """DAN-1942 F1: fontconfig 2.13 loaded 0 fonts from the shipped relative <dir>."""
+
+    def _run(self, runtime: Path, appdir: Path) -> str:
+        env = {"PATH": os.environ["PATH"], "HOME": str(runtime), "XDG_RUNTIME_DIR": str(runtime)}
+        proc = subprocess.run([str(appdir / "AppRun")], env=env, capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return proc.stdout.strip()
+
+    def test_conf_has_the_absolute_bundled_font_dir_and_lives_outside_appdir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            appdir = _fake_appdir(tmp)
+            runtime = tmp / "run"
+            runtime.mkdir()
+            before = _tree(appdir)
+            conf = Path(self._run(runtime, appdir))
+            self.assertTrue(conf.is_file(), conf)
+            self.assertTrue(str(conf).startswith(str(runtime)), conf)    # not inside $APPDIR
+            self.assertEqual(_tree(appdir), before)                      # nothing written there
+            text = conf.read_text()
+            self.assertIn(f"<dir>{appdir}/usr/share/fonts/hatate</dir>", text)
+            self.assertNotIn('prefix="relative"', text)
+
+    def test_a_second_launch_sweeps_confs_of_unmounted_images(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            first = _fake_appdir(tmp / "a")
+            second = _fake_appdir(tmp / "b")
+            runtime = tmp / "run"
+            runtime.mkdir()
+            stale = Path(self._run(runtime, first))
+            shutil.rmtree(first)                                         # that mount is gone
+            live = Path(self._run(runtime, second))
+            self.assertFalse(stale.exists())
+            self.assertTrue(live.is_file())
+
+    @unittest.skipUnless(shutil.which("fc-list"), "fc-list not installed")
+    def test_fontconfig_loads_a_font_from_the_conf(self):
+        fonts = next(iter(Path("/usr/share/fonts").rglob("*.ttf")), None)
+        if fonts is None:
+            self.skipTest("no .ttf on this machine to stand in for the bundled fonts")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            appdir = _fake_appdir(tmp)
+            shutil.copy(fonts, appdir / "usr" / "share" / "fonts" / "hatate" / "bundled.ttf")
+            runtime = tmp / "run"
+            runtime.mkdir()
+            conf = self._run(runtime, appdir)
+            proc = subprocess.run(
+                ["fc-list", "--format", "%{file}\\n"],
+                env={"PATH": os.environ["PATH"], "HOME": str(tmp), "FONTCONFIG_FILE": conf,
+                     "XDG_CACHE_HOME": str(tmp / "cache")},
+                capture_output=True, text=True)
+            bundled = str(appdir / "usr" / "share" / "fonts" / "hatate" / "bundled.ttf")
+            self.assertIn(bundled, proc.stdout.splitlines(), "bundled font not loaded")
+
+
+@unittest.skipUnless(os.environ.get("HATATE_APPIMAGE_FILE") and shutil.which("bwrap"),
+                     "set HATATE_APPIMAGE_FILE to a built AppImage (needs bwrap)")
+class TestBuiltImageFonts(unittest.TestCase):
+    def test_bundled_fontconfig_loads_the_bundled_fonts_with_no_system_fonts(self):
+        proc = subprocess.run([str(PKG / "smoke-fonts.sh"), os.environ["HATATE_APPIMAGE_FILE"]],
+                              capture_output=True, text=True)
+        print(proc.stdout)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertRegex(proc.stdout, r"nfont=([1-9]\d*)")
+        self.assertNotIn("U+29C9-in=none", proc.stdout)
