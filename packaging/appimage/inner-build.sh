@@ -29,7 +29,7 @@ apt-get install -y -qq --no-install-recommends \
     libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
     libxcb-render-util0 libxcb-shape0 libxcb-sync1 libxcb-xfixes0 libxcb-xinerama0 \
     libxcb-xkb1 libxkbcommon-x11-0 libwayland-client0 libwayland-cursor0 libwayland-egl1 libfontconfig1 libgl1 libegl1 libopengl0 \
-    fonts-liberation fonts-dejavu-core
+    fonts-liberation fonts-dejavu-core fonts-freefont-ttf
 dpkg -l | awk '/^ii/ {print $2" "$3}' > /out/rootfs-packages.txt
 
 # ------------------------------------------------------------------ python
@@ -99,31 +99,14 @@ echo "version $HATATE_VERSION"
 
 # ------------------------------------------------------------------- fonts
 step "fonts for a machine that has none"
-mkdir -p "$APPDIR/usr/share/fonts/hatate" "$APPDIR/usr/etc/fonts"
+mkdir -p "$APPDIR/usr/share/fonts/hatate"
 cp /usr/share/fonts/truetype/dejavu/DejaVu*.ttf /usr/share/fonts/truetype/liberation/Liberation*.ttf \
     "$APPDIR/usr/share/fonts/hatate/"
-cat > "$APPDIR/usr/etc/fonts/fonts.conf" <<'FCEOF'
-<?xml version="1.0"?>
-<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
-<!-- The image's own fontconfig (2.13) cannot parse the newer host
-     /etc/fonts/conf.d files (it prints a screenful of errors), so the host's
-     configuration is NOT included; its font directories are listed instead. -->
-<fontconfig>
-  <dir prefix="relative">../../share/fonts/hatate</dir>
-  <dir>/usr/share/fonts</dir>
-  <dir>/usr/local/share/fonts</dir>
-  <dir prefix="xdg">fonts</dir>
-  <dir>~/.fonts</dir>
-  <cachedir prefix="xdg">fontconfig</cachedir>
-  <alias><family>sans-serif</family><prefer><family>DejaVu Sans</family></prefer></alias>
-  <alias><family>serif</family><prefer><family>DejaVu Serif</family></prefer></alias>
-  <alias><family>monospace</family><prefer><family>DejaVu Sans Mono</family></prefer></alias>
-  <alias binding="same"><family>Arial</family><prefer><family>Liberation Sans</family></prefer></alias>
-  <alias binding="same"><family>Helvetica</family><prefer><family>Liberation Sans</family></prefer></alias>
-  <alias binding="same"><family>Times New Roman</family><prefer><family>Liberation Serif</family></prefer></alias>
-  <alias binding="same"><family>Courier New</family><prefer><family>Liberation Mono</family></prefer></alias>
-</fontconfig>
-FCEOF
+# FreeSerif is here for U+29C9 (the compare/copy button glyph), which neither
+# DejaVu nor Liberation has.
+cp /usr/share/fonts/truetype/freefont/FreeSerif.ttf "$APPDIR/usr/share/fonts/hatate/"
+# fonts.conf is written by AppRun at launch: it needs the absolute mount path
+# (the image's fontconfig 2.13 does not resolve a relative <dir>).
 
 # --------------------------------------------------------------- libraries
 step "shared libraries"
@@ -145,7 +128,7 @@ ln -sf hatate.svg "$APPDIR/.DirIcon"
 
 # ---------------------------------------------------------------- licenses
 step "licenses"
-"$PY" "$HERE/collect-licenses.py" "$APPDIR" /src /tmp/bundled-sources.txt fonts-liberation fonts-dejavu-core
+"$PY" "$HERE/collect-licenses.py" "$APPDIR" /src /tmp/bundled-sources.txt fonts-liberation fonts-dejavu-core fonts-freefont-ttf
 cp "$HERE/NOTICE" "$APPDIR/usr/share/licenses/NOTICE"
 cp "$HERE/NOTICE" "$APPDIR/NOTICE"
 
