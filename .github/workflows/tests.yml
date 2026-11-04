@@ -57,9 +57,18 @@ jobs:
         # The runtime dependencies come too: without them mypy resolves
         # PyQt6, bs4 and Pillow to nothing and reports missing-import
         # noise instead of anything about this code.
+        #
+        # DAN-2634: constrained to requirements-lock.txt. PyQt6 6.12.0
+        # shipped a QtGui.pyi that mypy 2.4.1 cannot parse (`'/' parameter
+        # must appear before '*' parameter`), which failed lint on every PR
+        # regardless of what it changed. Lint checks this code, not the
+        # newest stubs, so it uses the known-good versions; the test matrix
+        # below stays unconstrained and keeps exercising the newest
+        # releases. Capping PyQt6 in requirements.txt instead would have
+        # changed what users install for a type-checker problem.
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          pip install -c requirements-lock.txt -r requirements.txt -r requirements-dev.txt
 
       - name: Ruff
         # Blocking. The ruleset is deliberately narrow - see ruff.toml for
