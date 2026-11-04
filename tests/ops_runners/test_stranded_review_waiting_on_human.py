@@ -19,7 +19,7 @@ import contextlib
 import io
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import stranded_review
 from stranded_review import classify_finding, decide_strand_action, evaluate_issue
