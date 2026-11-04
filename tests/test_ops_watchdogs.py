@@ -7,7 +7,7 @@ ops/tick_finalize.py. unittest discovery cannot collect them (module-level
 `def test_*` functions, bare `import seat_watchdog`), and they must stay
 byte-identical to the originals, so each is run in a subprocess with ops/ on
 PYTHONPATH and its own "N/N passed" line is asserted against a pinned count.
-The pin is what proves all 202 cases executed: a runner that silently
+The pin is what proves all 208 cases executed: a runner that silently
 collected fewer would still exit 0.
 """
 
@@ -24,6 +24,7 @@ RUNNERS = Path(__file__).resolve().parent / "ops_runners"
 EXPECTED = {
     "test_seat_watchdog.py": 59,
     "test_stranded_review.py": 60,
+    "test_stranded_review_waiting_on_human.py": 6,
     "test_routine_checkout_watchdog.py": 73,
     "test_tick_finalize.py": 10,
 }
@@ -54,14 +55,17 @@ class OpsWatchdogRunners(unittest.TestCase):
     def test_stranded_review(self) -> None:
         self.run_runner("test_stranded_review.py")
 
+    def test_stranded_review_waiting_on_human(self) -> None:
+        self.run_runner("test_stranded_review_waiting_on_human.py")
+
     def test_routine_checkout_watchdog(self) -> None:
         self.run_runner("test_routine_checkout_watchdog.py")
 
     def test_tick_finalize(self) -> None:
         self.run_runner("test_tick_finalize.py")
 
-    def test_expected_total_is_202(self) -> None:
-        self.assertEqual(sum(EXPECTED.values()), 202)
+    def test_expected_total_is_208(self) -> None:
+        self.assertEqual(sum(EXPECTED.values()), 208)
 
 
 if __name__ == "__main__":

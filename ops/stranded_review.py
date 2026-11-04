@@ -72,7 +72,7 @@ actually watching:
   DAN-858) before the strongest claim and the most expensive remedy (CEO
   escalation) are used.
 
-  `evaluate_issue()`/`classify_finding()` now names three strand classes,
+  `evaluate_issue()`/`classify_finding()` now names these strand classes,
   each with its own remedy, instead of one `unreachable` boolean:
 
     - `reconciliation_hold`: the per-issue GET's `executionBlocker` is
@@ -95,6 +95,13 @@ actually watching:
       says the seat is fine, so an ordinary comment is expected to generate
       a wake that gets claimed, exactly as it did 0.3 seconds after DAN-551's
       own (mis-targeted) escalation comment.
+    - `waiting_on_human` (DAN-2630): `currentParticipant` is a board user
+      (`userId` set, `agentId` null). No agent comment can clear such a
+      stage (DAN-2201 was poked daily from 11-01 with 0 wakes, and every
+      poke made the 06:00Z tick `ACTIONABLE yes`; the 6h cap never bit on a
+      24h routine). Poked once, ever -- any prior marker suppresses it -- and
+      afterwards reported as a `WAITING-ON-HUMAN:` line with its age and
+      `ACTIONABLE: no`. Takes precedence over `reconciliation_hold`.
     - `reachable` (the `strand_class` used when none of the above apply):
       the pre-DAN-380 default path, unchanged.
 
@@ -392,9 +399,15 @@ def compute_findings(records, now):
     return findings
 
 
+def is_human_participant(participant):
+    """DAN-2630: True when the stage's `currentParticipant` is a board user
+    (`userId` set, `agentId` null) rather than an agent seat."""
+    return bool(participant.get("userId")) and participant.get("agentId") is None
+
+
 def classify_finding(finding, now, seat_runs=None):
     """DAN-380/DAN-727: attaches reachability facts to a finding and names
-    one of three strand classes (module docstring), so the caller can
+    one of the strand classes (module docstring), so the caller can
     decide the action via `decide_strand_action()`.
 
     `seat_runs` is the participant's raw heartbeat-run list (already
@@ -409,7 +422,11 @@ def classify_finding(finding, now, seat_runs=None):
     execution_blocker = record.get("executionBlocker")
     seat = classify_seat_reachability(seat_runs, now) if seat_runs is not None else None
 
-    if execution_blocker:
+    if is_human_participant(finding["participant"]):
+        # DAN-2630: the stage waits on a board decision. No agent comment can
+        # clear it, so there is no wake to lose and nothing to escalate.
+        strand_class = "waiting_on_human"
+    elif execution_blocker:
         strand_class = "reconciliation_hold"
     elif wake["unreachable"] and not wake["stale"] and seat is not None and not seat["reachable"]:
         strand_class = "unreachable_participant"
@@ -515,8 +532,12 @@ def decide_strand_action(strand_class, comments, participant_agent_id, record, n
         `ACTION_MARKER`) already ran for at least `MIN_PENDING_SECONDS`
         without producing a claimed wake to the participant -- only then
         does it escalate.
+      - `waiting_on_human` (DAN-2630): poke on the first encounter, then
+        `"wait"` -- no further action, ever, while the same stage waits.
       - everything else (`stranded_wake`, `reachable`): poke.
     """
+    if strand_class == "waiting_on_human":
+        return "wait" if last_marker_fingerprint(comments)[0] is not None else "poke"
     if strand_class == "reconciliation_hold":
         return "escalate"
     if strand_class != "unreachable_participant":
@@ -545,7 +566,7 @@ def decide_strand_action(strand_class, comments, participant_agent_id, record, n
     return "escalate"
 
 
-def should_poke(comments, now, fingerprint):
+def should_poke(comments, now, fingerprint, once=False):
     """False if a marker comment was already posted within
     REPOKE_INTERVAL_SECONDS of `now` AND the finding's classification
     fingerprint has not changed since that poke -- caps re-pokes to once
@@ -554,10 +575,16 @@ def should_poke(comments, now, fingerprint):
     reachable -> unreachable, or DAN-727: the strand class or recommended
     action changed) forces True regardless of the window. A legacy marker
     comment with no recorded fingerprint cannot be compared, so it falls
-    back to the window-only check that applied before this fix."""
+    back to the window-only check that applied before this fix.
+
+    `once` (DAN-2630, `waiting_on_human`): any prior marker, whatever its
+    fingerprint or age, means the one comment this class gets is already
+    on the issue."""
     last_marker_ts, last_fingerprint = last_marker_fingerprint(comments)
     if last_marker_ts is None:
         return True
+    if once:
+        return False
     if last_fingerprint is not None and last_fingerprint != fingerprint:
         return True
     return (now - last_marker_ts).total_seconds() >= REPOKE_INTERVAL_SECONDS
@@ -679,6 +706,26 @@ def describe_poke(finding, now, agent_names, classification=None, fingerprint=No
     execution_state = record["executionState"]
     execution = execution_facts(record)
     issue_id = record["id"]
+
+    if classification is not None and classification["strand_class"] == "waiting_on_human":
+        # DAN-2630: a board user's decision; an agent-targeted "this comment
+        # generates a claimable wake" would be false, and this is the only
+        # comment the detector will ever post here.
+        return "\n".join(
+            [
+                f"## Stranded-approval-stage detector -- waiting on a board decision {MARKER}",
+                "",
+                f"The `{execution_state.get('currentStageType')}` stage on "
+                f"[{record.get('identifier', issue_id)}](/DAN/issues/{record.get('identifier', issue_id)}) "
+                f"has been pending since {finding['since'].isoformat()} "
+                f"({_fmt_elapsed(now, finding['since'])} ago) and its `currentParticipant` is a board user "
+                f"(**{label}**). No agent action clears it, so this detector will not comment here again; "
+                "it keeps listing the issue, with its age, in each sweep's output.",
+                "",
+                _action_line("poke"),
+                *(["", _fingerprint_line(fingerprint)] if fingerprint is not None else []),
+            ]
+        )
 
     lines = [
         f"## Stranded-approval-stage detector -- participant action needed {MARKER}",
@@ -923,10 +970,13 @@ def main():
             poke_body = describe_escalation(finding, now, names, classification, fingerprint)
         else:
             poke_body = describe_poke(finding, now, names, classification, fingerprint)
-        print(poke_body)
-        print()
+        if action != "wait":
+            print(poke_body)
+            print()
 
-        due = should_poke(comments, now, fingerprint)
+        due = should_poke(
+            comments, now, fingerprint, once=classification["strand_class"] == "waiting_on_human"
+        )
         identifier = record.get("identifier", record["id"])
 
         if due and will_post:
@@ -939,6 +989,14 @@ def main():
             else:
                 api_post(f"/api/issues/{record['id']}/comments", {"body": poke_body})
                 print(f"Posted {action} comment on {identifier}.")
+        elif classification["strand_class"] == "waiting_on_human":
+            # DAN-2630: not actionable, but still named (with its age) so the
+            # tick's --note and the stand-down's needs-the-board block can
+            # read it.
+            print(
+                f"WAITING-ON-HUMAN: {identifier} -- board decision pending "
+                f"{_fmt_elapsed(now, finding['since'])}; already poked once, no further action."
+            )
         elif will_post:
             print(f"Skipped {identifier}: poked within the last 6h already.")
         elif due:
